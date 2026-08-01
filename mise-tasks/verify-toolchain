@@ -61,8 +61,8 @@ ide_sdk_path() {
     options=("$HOME/Library/Application Support/Google/AndroidStudio"*/options/android.sdk.path.xml)
     shopt -u nullglob
     if ((${#options[@]} > 0)); then
-      # Newest Studio config wins if several are installed.
-      local newest="${options[${#options[@]} - 1]}"
+      # Most recently modified Studio config wins if several are installed.
+      local newest="$(ls -t "${options[@]}" 2>/dev/null | head -1)"
       path="$(sed -nE 's/.*androidSdkAbsolutePath" value="([^"]+)".*/\1/p' "$newest" | head -1)"
       path="${path/\$USER_HOME\$/$HOME}"
     fi

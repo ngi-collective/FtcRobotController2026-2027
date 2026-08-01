@@ -39,7 +39,7 @@ run = "./gradlew :TeamCode:lintDebug"
 
 [tasks.clean]
 description = "Delete build outputs"
-run = "./gradlew clean"
+run = "./gradlew :TeamCode:clean"
 
 [tasks.setup-sdk]
 description = "Install the SDK packages the build needs into the mise-managed ANDROID_HOME"
