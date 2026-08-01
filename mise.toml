@@ -44,6 +44,8 @@ run = "./gradlew clean"
 [tasks.setup-sdk]
 description = "Install the SDK packages the build needs into the mise-managed ANDROID_HOME"
 run = """
+# compileSdkVersion is the source of truth for the platform, same as verify-toolchain.
+platform="android-$(sed -nE 's/^[[:space:]]*compileSdkVersion[[:space:]]+([0-9]+).*/\\1/p' build.common.gradle | head -1)"
 yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses > /dev/null
-sdkmanager --sdk_root="$ANDROID_HOME" "platforms;android-30" "build-tools;34.0.0" "platform-tools"
+sdkmanager --sdk_root="$ANDROID_HOME" "platforms;$platform" "build-tools;34.0.0" "platform-tools"
 """
