@@ -65,12 +65,3 @@ jobs:
 
       - name: Build APK
         run: mise run build
-
-      # Lets a team member download a installable APK straight from the run
-      # instead of needing a local Android toolchain.
-      - name: Upload APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: TeamCode-debug-apk
-          path: TeamCode/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
