@@ -2,7 +2,7 @@ package org.firstinspires.ftc.teamcode;
 
 public class MecanumMovement {
 
-    public ChassisMotors calculate(MockJoystick jsl, MockJoystick jsr) {
+    public ChassisMotors calculate(JoystickInput jsl, JoystickInput jsr) {
         double driveMult = 1;
         double twistMult = 1;
 

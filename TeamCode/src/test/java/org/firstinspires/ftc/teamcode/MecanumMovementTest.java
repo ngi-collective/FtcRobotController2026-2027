@@ -9,8 +9,8 @@ class MecanumMovementTest {
     @Test
     void mecanumLeft() {
         MecanumMovement movement = new MecanumMovement();
-        MockJoystick jsl = new MockJoystick();
-        MockJoystick jsr = new MockJoystick();
+        JoystickInput jsl = new JoystickInput();
+        JoystickInput jsr = new JoystickInput();
         jsl.update(-1.0, 0.0);
 
         ChassisMotors motors = movement.calculate(jsl, jsr);
@@ -24,8 +24,8 @@ class MecanumMovementTest {
     @Test
     void mecanumRight() {
         MecanumMovement movement = new MecanumMovement();
-        MockJoystick jsl = new MockJoystick();
-        MockJoystick jsr = new MockJoystick();
+        JoystickInput jsl = new JoystickInput();
+        JoystickInput jsr = new JoystickInput();
         jsl.update(1.0, 0.0);
 
         ChassisMotors motors = movement.calculate(jsl, jsr);
@@ -39,8 +39,8 @@ class MecanumMovementTest {
     @Test
     void mecanumForward() {
         MecanumMovement movement = new MecanumMovement();
-        MockJoystick jsl = new MockJoystick();
-        MockJoystick jsr = new MockJoystick();
+        JoystickInput jsl = new JoystickInput();
+        JoystickInput jsr = new JoystickInput();
         jsl.update(0.0, 1.0);
 
         ChassisMotors motors = movement.calculate(jsl, jsr);
@@ -54,8 +54,8 @@ class MecanumMovementTest {
     @Test
     void mecanumBackward() {
         MecanumMovement movement = new MecanumMovement();
-        MockJoystick jsl = new MockJoystick();
-        MockJoystick jsr = new MockJoystick();
+        JoystickInput jsl = new JoystickInput();
+        JoystickInput jsr = new JoystickInput();
         jsl.update(0.0, -1.0);
 
         ChassisMotors motors = movement.calculate(jsl, jsr);
@@ -69,8 +69,8 @@ class MecanumMovementTest {
     @Test
     void mecanumTwistLeft() {
         MecanumMovement movement = new MecanumMovement();
-        MockJoystick jsl = new MockJoystick();
-        MockJoystick jsr = new MockJoystick();
+        JoystickInput jsl = new JoystickInput();
+        JoystickInput jsr = new JoystickInput();
         jsr.update(-1.0, 0.0);
 
         ChassisMotors motors = movement.calculate(jsl, jsr);
@@ -84,8 +84,8 @@ class MecanumMovementTest {
     @Test
     void mecanumTwistRight() {
         MecanumMovement movement = new MecanumMovement();
-        MockJoystick jsl = new MockJoystick();
-        MockJoystick jsr = new MockJoystick();
+        JoystickInput jsl = new JoystickInput();
+        JoystickInput jsr = new JoystickInput();
         jsr.update(1.0, 0.0);
 
         ChassisMotors motors = movement.calculate(jsl, jsr);
