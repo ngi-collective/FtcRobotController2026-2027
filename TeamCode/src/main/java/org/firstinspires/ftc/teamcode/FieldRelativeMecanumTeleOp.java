@@ -74,7 +74,9 @@ public class FieldRelativeMecanumTeleOp extends LinearOpMode {
         while (opModeIsActive()) {
 
             if (gamepad1.a) {
+                double headingBeforeReset = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
                 imu.resetYaw();
+                driverOffsetRadians = AngleUnit.normalizeRadians(driverOffsetRadians - headingBeforeReset);
             }
 
             driverOffsetRadians = calibrateDriverOffset(driverOffsetRadians, imu);
