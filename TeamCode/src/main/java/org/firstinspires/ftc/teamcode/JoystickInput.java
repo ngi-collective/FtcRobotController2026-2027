@@ -1,6 +1,6 @@
 package org.firstinspires.ftc.teamcode;
 
-public class MockJoystick {
+public class JoystickInput {
     private double x = 0.0;
     private double y = 0.0;
 
