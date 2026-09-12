@@ -2,13 +2,8 @@ package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-
-import java.util.Arrays;
 
 @TeleOp(name = "I AM VERITY V2")
 public class iamyou extends LinearOpMode {
@@ -34,20 +29,7 @@ public class iamyou extends LinearOpMode {
         String driverPosition = "SOUTH";
 
         // ================= DRIVE MOTORS =================
-        DcMotorEx FL = hardwareMap.get(DcMotorEx.class, "FL");
-        DcMotorEx FR = hardwareMap.get(DcMotorEx.class, "FR");
-        DcMotorEx BL = hardwareMap.get(DcMotorEx.class, "BL");
-        DcMotorEx BR = hardwareMap.get(DcMotorEx.class, "BR");
-
-        FL.setDirection(DcMotorSimple.Direction.REVERSE);
-        BL.setDirection(DcMotorSimple.Direction.REVERSE);
-        FR.setDirection(DcMotorSimple.Direction.FORWARD);
-        BR.setDirection(DcMotorSimple.Direction.FORWARD);
-
-        for (DcMotor m : Arrays.asList(FL, FR, BL, BR)) {
-            m.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            m.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        }
+        DriveHardware drive = DriveHardware.initWithEncoders(hardwareMap);
 
         // --- Pre-start telemetry ---
         telemetry.addData("Status", "Initialized");
@@ -96,10 +78,7 @@ public class iamyou extends LinearOpMode {
 
             IamYouLogic.DriveResult result = logic.calculate(params);
 
-            FL.setPower(result.powers.getFL());
-            BL.setPower(result.powers.getBL());
-            FR.setPower(result.powers.getFR());
-            BR.setPower(result.powers.getBR());
+            drive.setPowers(result.powers);
 
             // ================= TELEMETRY =================
             telemetry.addData("Cardinal Direction", liveCardinal);
@@ -116,14 +95,11 @@ public class iamyou extends LinearOpMode {
             telemetry.addData("Field Strafe",            "%.2f", result.fieldStrafe);
             telemetry.addData("FL | FR",                 "%.2f | %.2f", result.powers.getFL(), result.powers.getFR());
             telemetry.addData("BL | BR",                 "%.2f | %.2f", result.powers.getBL(), result.powers.getBR());
-            telemetry.addData("FL Vel | FR Vel",         "%.0f | %.0f", FL.getVelocity(), FR.getVelocity());
-            telemetry.addData("BL Vel | BR Vel",         "%.0f | %.0f", BL.getVelocity(), BR.getVelocity());
+            telemetry.addData("FL Vel | FR Vel",         "%.0f | %.0f", drive.fl.getVelocity(), drive.fr.getVelocity());
+            telemetry.addData("BL Vel | BR Vel",         "%.0f | %.0f", drive.bl.getVelocity(), drive.br.getVelocity());
             telemetry.update();
         }
 
-        FL.setPower(0);
-        FR.setPower(0);
-        BL.setPower(0);
-        BR.setPower(0);
+        drive.stop();
     }
 }
