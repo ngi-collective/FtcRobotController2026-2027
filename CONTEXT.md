@@ -6,6 +6,51 @@ of that framework and for the season's game pieces.
 
 ## Language
 
+### Software components
+
+**Robot Controller app**:
+The Android app that runs OpModes on a robot. Built two ways from this repo: the competition
+build, which talks to real hardware, and the Simulated Robot Controller.
+_Avoid_: the app, RC, robot controller (unqualified)
+
+**Simulated Robot Controller**:
+The build of the Robot Controller app whose hardware is a simulated robot and whose camera is a
+simulated camera. Runs OpModes through the SDK's own event loop, on a device or emulator.
+_Avoid_: the simulated app, sim build, emulator app
+
+**Driver Station**:
+The FTC app a driver uses to choose an OpMode and drive, connected to a Robot Controller app over
+a network.
+_Avoid_: DS (unqualified), driver app
+
+**Driver Hub**:
+REV's handheld hardware that runs the Driver Station. Hardware only: never a name for anything in
+this repo.
+_Avoid_: using this for the Driver Hub Dashboard
+
+**Driver Hub Dashboard**:
+The browser application a developer drives the simulation from. Also *Hub Dashboard* or *the
+Dashboard*. Its own OpModes run through a harness, not through the SDK's event loop.
+_Avoid_: Driver Hub, driver station replacement, web UI
+
+**Dashboard Server**:
+The process that serves the Driver Hub Dashboard and owns the simulation it shows.
+_Avoid_: backend, dashboard host
+
+**Dashboard Field View**:
+The panel in the Driver Hub Dashboard that draws the field and the robot on it, from above or in
+3D.
+_Avoid_: the 3D view, scene, field panel
+
+**Dashboard Camera View**:
+The panel in the Driver Hub Dashboard that shows a camera view, with or without a camera overlay.
+_Avoid_: video panel, preview pane
+
+**Test framework**:
+The library of fake devices, harnesses, the drive model and the camera renderer, shared by the
+Dashboard Server, the Simulated Robot Controller and the tests.
+_Avoid_: the framework, sim library
+
 ### Running OpModes
 
 **Execution target**:
@@ -62,6 +107,15 @@ A camera whose frames are rendered from the simulated world rather than captured
 Unlike a fake device, its output derives from the shared world model, not from a scripted
 per-device behavior.
 _Avoid_: virtual camera, fake camera, synthetic camera
+
+**Camera view**:
+What a simulated camera sees, presented to a person: the frames it renders, unannotated.
+_Avoid_: livestream, camera feed, preview
+
+**Camera overlay**:
+A camera view with detection annotations drawn over it &mdash; tag outlines, axes, contours.
+Distinct from the SDK's Driver Station camera stream, which is the same idea on real hardware.
+_Avoid_: annotated stream, debug view
 
 **Camera mount**:
 Where a camera sits relative to the robot's origin: a translation and a rotation, six degrees of
