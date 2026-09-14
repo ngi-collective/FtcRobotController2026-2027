@@ -1,10 +1,19 @@
 package org.firstinspires.ftc.teamcode.simulated;
 
 import org.ngicollective.testframework.behavior.ImuBehaviors;
+import org.ngicollective.testframework.camera.CameraIntrinsics;
+import org.ngicollective.testframework.camera.Pose3d;
+import org.ngicollective.testframework.camera.SceneFrameSource;
+import org.ngicollective.testframework.camera.SimulatedCamera;
+import org.ngicollective.testframework.camera.SimulatedScene;
+import org.ngicollective.testframework.camera.Vec3;
 import org.ngicollective.testframework.hardware.FakeHardwareMap;
 import org.ngicollective.testframework.hardware.SimulatedRobot;
+import org.ngicollective.testframework.season.BioBuzzField;
+import org.ngicollective.testframework.sim.CameraConfig;
 import org.ngicollective.testframework.sim.FieldConfig;
 import org.ngicollective.testframework.sim.MotorConfig;
+import org.ngicollective.testframework.sim.Pose2d;
 import org.ngicollective.testframework.sim.RobotConfig;
 import org.ngicollective.testframework.sim.SimConfigFiles;
 
@@ -29,6 +38,17 @@ import java.util.Map;
 public class VerityRobot implements SimulatedRobot {
 
     private static final String CONFIG_NAME = "verity";
+
+    /**
+     * The camera's optics before an OpMode has chosen a resolution: a nominal 60&deg; webcam.
+     *
+     * <p>Not a placeholder. Once {@code VisionPortal} starts streaming, the simulated camera
+     * swaps in the SDK's own calibration for the resolution the OpMode asked for, so that frames
+     * are drawn through the very lens the pose solver inverts. This is what the plain-JVM tests,
+     * which have no Android calibration database to consult, render through.</p>
+     */
+    private static final CameraIntrinsics NOMINAL_OPTICS =
+            CameraIntrinsics.approximate(640, 480);
 
     private final RobotConfig config;
     private final FieldConfig field;
@@ -60,7 +80,24 @@ public class VerityRobot implements SimulatedRobot {
             builder.addMotor(motor);
         }
 
+        // The camera's view follows the robot, so its frame source needs the pose that the map it
+        // is being added to will own. Hence the holder: the map cannot exist before the devices
+        // that go in it, and the camera cannot read a pose before the map exists.
+        final FakeHardwareMap[] built = new FakeHardwareMap[1];
+        CameraConfig camera = config.camera();
+        SceneFrameSource frames = new SceneFrameSource(
+                scene(),
+                new SimulatedCamera(camera.name(), NOMINAL_OPTICS, mountOf(camera)),
+                new SceneFrameSource.PoseSource() {
+                    @Override
+                    public Pose2d pose() {
+                        return built[0].drive().pose();
+                    }
+                });
+        builder.addWebcam(camera.name(), frames, camera.framesPerSecond());
+
         FakeHardwareMap hardware = builder.withDrivetrain(config, field).build();
+        built[0] = hardware;
         for (Map.Entry<String, MotorConfig> entry : config.motors().entrySet()) {
             MotorConfig motor = entry.getValue();
             hardware.motor(entry.getKey())
@@ -68,6 +105,22 @@ public class VerityRobot implements SimulatedRobot {
                     .setMaxSpeed(motor.rpm(), motor.ticksPerRevolution());
         }
         return hardware;
+    }
+
+    /**
+     * What the camera is looking at.
+     *
+     * <p>The official BioBuzz field, which needs no file to be correct. A practice setup that
+     * differs is a scenario, and belongs in one.</p>
+     */
+    protected SimulatedScene scene() {
+        return BioBuzzField.official();
+    }
+
+    private static Pose3d mountOf(CameraConfig camera) {
+        return Pose3d.ofDegrees(
+                new Vec3(camera.forwardMetres(), camera.leftMetres(), camera.heightMetres()),
+                camera.yawDegrees(), camera.pitchDegrees(), camera.rollDegrees());
     }
 
     /** The robot this configuration describes, for callers that need its geometry. */
