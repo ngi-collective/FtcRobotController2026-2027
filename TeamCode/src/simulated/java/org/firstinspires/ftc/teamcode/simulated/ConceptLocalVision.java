@@ -6,8 +6,10 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
+import org.firstinspires.ftc.vision.apriltag.AprilTagClusterDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
+import org.firstinspires.ftc.vision.apriltag.AprilTagSingleDetection;
 import org.firstinspires.ftc.vision.opencv.ColorBlobLocatorProcessor;
 import org.firstinspires.ftc.vision.opencv.ColorRange;
 import org.firstinspires.ftc.vision.opencv.ImageRegion;
@@ -69,16 +71,14 @@ public class ConceptLocalVision extends LinearOpMode {
                 telemetry.addData("camera", "%s @ %.1f fps, %d frames",
                         vision.getCameraResolution(), vision.getFps(), vision.getFrameCount());
 
+                // BioBuzz puts every tag in a four-member cluster, so a cluster detection is the
+                // normal case and a single tag is the exception. A cluster reports one pose for
+                // the whole sticker, resolves even when members are occluded, and aims at the
+                // CELL opening rather than at any one tag face.
                 List<AprilTagDetection> detections = aprilTag.getDetections();
                 telemetry.addData("april tags", detections.size());
                 for (AprilTagDetection detection : detections) {
-                    if (detection.ftcPose == null) {
-                        telemetry.addLine(String.format("  id %d (no pose: unknown tag)",
-                                detection.id));
-                    } else {
-                        telemetry.addLine(String.format("  id %d  range %5.1f  bearing %5.1f",
-                                detection.id, detection.ftcPose.range, detection.ftcPose.bearing));
-                    }
+                    telemetry.addLine("  " + describe(detection) + "  " + describePose(detection));
                 }
 
                 List<ColorBlobLocatorProcessor.Blob> blobs = colorLocator.getBlobs();
@@ -97,5 +97,28 @@ public class ConceptLocalVision extends LinearOpMode {
         } finally {
             vision.close();
         }
+    }
+
+    /** What was seen: a named cluster and how much of it resolved, or a lone tag's ID. */
+    private static String describe(AprilTagDetection detection) {
+        if (detection instanceof AprilTagClusterDetection) {
+            AprilTagClusterDetection cluster = (AprilTagClusterDetection) detection;
+            return String.format("%-14s %3d%% found",
+                    cluster.metadata.shortName, cluster.percentClusterFound);
+        }
+        return String.format("tag %-10d", ((AprilTagSingleDetection) detection).id);
+    }
+
+    /**
+     * Where it is, relative to the camera. Absolute field position is deliberately not reported:
+     * BioBuzz tags ride on the HIVE, which tips during a match, so FIRST states they are not
+     * suitable for absolute field localization.
+     */
+    private static String describePose(AprilTagDetection detection) {
+        if (detection.ftcPose == null) {
+            return "no pose (tag not in the active library)";
+        }
+        return String.format("range %5.1f  bearing %5.1f  yaw %5.1f",
+                detection.ftcPose.range, detection.ftcPose.bearing, detection.ftcPose.yaw);
     }
 }

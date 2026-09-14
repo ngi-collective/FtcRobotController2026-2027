@@ -39,12 +39,45 @@ class MecanumDrivePoseTest {
         harness.gamepad1().left_stick_y = (float) leftY;
         harness.gamepad1().right_stick_x = (float) rightX;
 
-        // The OpMode runs on its own thread; pump until it has reacted to the sticks, so what is
-        // measured below is the drive model and not the scheduler.
-        for (int spin = 0; spin < 100 && hardware.motor("FL").state().getVelocity() == 0.0; spin++) {
-            harness.advance(TICK);
+        awaitAllWheelsCommanded();
+
+        // Measure from a standstill at the origin. The wait above deliberately does not advance
+        // the simulation: a tick landing mid-command integrates a partial mecanum solution (some
+        // wheels set, some still at their previous power), which turns up as phantom drift in the
+        // pose and made these tests fail roughly one run in eight.
+        hardware.drive().setPose(Pose2d.ORIGIN);
+    }
+
+    /**
+     * Blocks until the OpMode thread has applied a power to every wheel.
+     *
+     * <p>Commanded power, not measured velocity: {@code setPower} takes effect immediately, while
+     * velocity only ramps once the simulation advances &mdash; and advancing is the very thing
+     * that must not happen while a command is half-applied.</p>
+     */
+    private void awaitAllWheelsCommanded() {
+        for (int attempt = 0; attempt < 500; attempt++) {
             harness.eventLoopIteration();
+            if (allWheelsCommanded()) {
+                return;
+            }
+            try {
+                Thread.sleep(1);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("interrupted waiting for the OpMode to drive", interrupted);
+            }
         }
+        throw new AssertionError("the OpMode never commanded all four wheels");
+    }
+
+    private boolean allWheelsCommanded() {
+        for (String wheel : new String[] {"FL", "FR", "BL", "BR"}) {
+            if (hardware.motor(wheel).getPower() == 0.0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private Pose2d after(double seconds) {
