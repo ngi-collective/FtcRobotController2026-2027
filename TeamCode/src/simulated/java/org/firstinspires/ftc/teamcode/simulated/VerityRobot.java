@@ -52,6 +52,7 @@ public class VerityRobot implements SimulatedRobot {
 
     private final RobotConfig config;
     private final FieldConfig field;
+    private final SimulatedScene scene;
 
     public VerityRobot() {
         this(SimConfigFiles.robot(CONFIG_NAME), SimConfigFiles.field());
@@ -59,8 +60,21 @@ public class VerityRobot implements SimulatedRobot {
 
     /** For tests that want a robot or a field that differs from the one on disk. */
     public VerityRobot(RobotConfig config, FieldConfig field) {
+        this(config, field, BioBuzzField.official());
+    }
+
+    /**
+     * The same, looking at a particular arrangement of the field.
+     *
+     * <p>The official field is the default because it needs no file to be right. A scenario is
+     * for the arrangements that are a choice &mdash; a HIVE tipped the other way, balls left where
+     * they broke autonomous last weekend &mdash; and
+     * {@code SimConfigFiles.scenario(name).scene()} is where one comes from.</p>
+     */
+    public VerityRobot(RobotConfig config, FieldConfig field, SimulatedScene scene) {
         this.config = config;
         this.field = field;
+        this.scene = scene;
     }
 
     @Override
@@ -110,11 +124,11 @@ public class VerityRobot implements SimulatedRobot {
     /**
      * What the camera is looking at.
      *
-     * <p>The official BioBuzz field, which needs no file to be correct. A practice setup that
-     * differs is a scenario, and belongs in one.</p>
+     * <p>Overridable so a subclass can decide at runtime; the scene it is handed defaults to the
+     * official BioBuzz field, which needs no file to be correct.</p>
      */
     protected SimulatedScene scene() {
-        return BioBuzzField.official();
+        return scene;
     }
 
     private static Pose3d mountOf(CameraConfig camera) {
