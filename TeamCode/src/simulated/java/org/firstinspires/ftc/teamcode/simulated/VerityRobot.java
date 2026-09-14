@@ -74,7 +74,11 @@ public class VerityRobot implements SimulatedRobot {
     public VerityRobot(RobotConfig config, FieldConfig field, SimulatedScene scene) {
         this.config = config;
         this.field = field;
-        this.scene = scene;
+        // On this robot's field, whatever the scene was built with: a season's tag geometry is
+        // fixed by the game manual and knows nothing about which perimeter is in the room, while
+        // the drive model and the Dashboard Field View both take the configured one. Skipping this
+        // is how the camera comes to render a competition field beside a field view of a half one.
+        this.scene = scene.on(field);
     }
 
     @Override
