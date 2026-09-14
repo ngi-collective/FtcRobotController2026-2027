@@ -17,8 +17,20 @@ A unit of robot behavior the driver selects and runs, discovered by annotation.
 _Avoid_: program, routine, mode
 
 **Harness**:
-The thing that drives an OpMode's lifecycle in place of the Driver Station.
+The thing that drives an OpMode's lifecycle in place of the event loop, pressing init, start and
+stop as a Driver Station would.
 _Avoid_: runner, driver, host
+
+**Event loop**:
+The SDK's own driver of the active OpMode: it selects one, calls it once per control cycle, and
+stops it. What a harness stands in for.
+_Avoid_: run loop, scheduler, main loop
+
+**Robot start**:
+The SDK's bring-up of a robot: building the device list, starting the event loop, and registering
+the OpModes a driver can select. It needs a network connection, so it cannot complete on an
+emulator, and until it completes no OpMode can be selected.
+_Avoid_: robot setup, boot, initialization
 
 ### Simulation
 
