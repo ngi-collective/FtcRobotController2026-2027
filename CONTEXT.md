@@ -94,8 +94,9 @@ _Avoid_: strategy, script, profile
 
 **Field frame**:
 The coordinate frame all poses are expressed in: origin at field centre, metres, z up, heading in
-radians CCW-positive, heading zero facing +X. The audience sits at -Y. The season CAD uses a
-different frame (inches, +Y up, audience at +Z) and is converted on the way in.
+radians CCW-positive, heading zero facing +X. The alliance stations are on the X axis, red at -X,
+and the audience sits at -Y. The season CAD uses a different frame (inches, +Y up, audience at +Z)
+and is converted on the way in.
 _Avoid_: world frame, global coordinates, arena frame
 
 **Pose**:
