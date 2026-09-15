@@ -2,11 +2,9 @@ package org.firstinspires.ftc.teamcode.simulated;
 
 import org.ngicollective.testframework.behavior.ImuBehaviors;
 import org.ngicollective.testframework.camera.CameraIntrinsics;
-import org.ngicollective.testframework.camera.Pose3d;
 import org.ngicollective.testframework.camera.SceneFrameSource;
 import org.ngicollective.testframework.camera.SimulatedCamera;
 import org.ngicollective.testframework.camera.SimulatedScene;
-import org.ngicollective.testframework.camera.Vec3;
 import org.ngicollective.testframework.hardware.FakeHardwareMap;
 import org.ngicollective.testframework.hardware.SimulatedRobot;
 import org.ngicollective.testframework.season.BioBuzzField;
@@ -76,8 +74,18 @@ public class VerityRobot implements SimulatedRobot {
      */
     private volatile Snapshot current;
 
+    /**
+     * The file {@link #source} reads, or null when the numbers were handed in by a test.
+     *
+     * <p>What makes a camera mount adjusted on the dashboard saveable: the session has to know
+     * which file to put it back into, and a robot built from a {@code RobotConfig} someone
+     * constructed has no such file.</p>
+     */
+    private final Path configurationFile;
+
     public VerityRobot() {
-        this(() -> new Snapshot(SimConfigFiles.robot(CONFIG_NAME), SimConfigFiles.field()));
+        this(() -> new Snapshot(SimConfigFiles.robot(CONFIG_NAME), SimConfigFiles.field()),
+                SimConfigFiles.robotFile(CONFIG_NAME));
     }
 
     /**
@@ -88,7 +96,8 @@ public class VerityRobot implements SimulatedRobot {
      */
     public VerityRobot(Path configDirectory) {
         this(() -> new Snapshot(SimConfigFiles.robot(configDirectory, CONFIG_NAME),
-                SimConfigFiles.field(configDirectory)));
+                SimConfigFiles.field(configDirectory)),
+                SimConfigFiles.robotFile(configDirectory, CONFIG_NAME));
     }
 
     /** For tests that want a robot or a field that differs from the one on disk. */
@@ -105,11 +114,12 @@ public class VerityRobot implements SimulatedRobot {
      * {@code SimConfigFiles.scenario(name).scene()} is where one comes from.</p>
      */
     public VerityRobot(RobotConfig config, FieldConfig field, SimulatedScene scene) {
-        this(fixed(new Snapshot(config, field, scene)));
+        this(fixed(new Snapshot(config, field, scene)), null);
     }
 
-    private VerityRobot(Supplier<Snapshot> source) {
+    private VerityRobot(Supplier<Snapshot> source, Path configurationFile) {
         this.source = source;
+        this.configurationFile = configurationFile;
         // Read now as well as per create(), because a robot is asked its name before anything is
         // built: the dashboard picks which configuration to drive by name. A file that will not
         // parse therefore still fails at startup, where it is easiest to understand.
@@ -124,6 +134,11 @@ public class VerityRobot implements SimulatedRobot {
     @Override
     public String name() {
         return current.robot.name();
+    }
+
+    @Override
+    public Path configurationFile() {
+        return configurationFile;
     }
 
     @Override
@@ -183,7 +198,7 @@ public class VerityRobot implements SimulatedRobot {
         CameraConfig camera = config.camera();
         SceneFrameSource frames = new SceneFrameSource(
                 scene(),
-                new SimulatedCamera(camera.name(), NOMINAL_OPTICS, mountOf(camera)),
+                new SimulatedCamera(camera.name(), NOMINAL_OPTICS, camera.mount().pose()),
                 new SceneFrameSource.PoseSource() {
                     @Override
                     public Pose2d pose() {
@@ -212,12 +227,6 @@ public class VerityRobot implements SimulatedRobot {
      */
     protected SimulatedScene scene() {
         return current.scene;
-    }
-
-    private static Pose3d mountOf(CameraConfig camera) {
-        return Pose3d.ofDegrees(
-                new Vec3(camera.forwardMetres(), camera.leftMetres(), camera.heightMetres()),
-                camera.yawDegrees(), camera.pitchDegrees(), camera.rollDegrees());
     }
 
     /** The robot the most recent read describes, for callers that need its geometry. */
