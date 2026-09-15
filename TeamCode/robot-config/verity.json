@@ -25,5 +25,55 @@
     "FR": { "role": "frontRight", "mirrored": false, "rpm": 312.0, "ticksPerRevolution": 537.7 },
     "BL": { "role": "backLeft",   "mirrored": true,  "rpm": 312.0, "ticksPerRevolution": 537.7 },
     "BR": { "role": "backRight",  "mirrored": false, "rpm": 312.0, "ticksPerRevolution": 537.7 }
+  },
+  "servos": {
+    "intake": {
+      "type": "continuous",
+      "surfaceMetresPerSecond": 1.4,
+      "sweep": {
+        "forwardMetres": 0.24,
+        "leftMetres": 0.0,
+        "heightMetres": 0.085,
+        "lengthMetres": 0.06,
+        "widthMetres": 0.28,
+        "tallMetres": 0.07
+      }
+    }
+  },
+  "sensors": {
+    "intakeTouch": {
+      "type": "touch",
+      "volume": {
+        "forwardMetres": 0.235,
+        "leftMetres": 0.0,
+        "heightMetres": 0.045,
+        "lengthMetres": 0.10,
+        "widthMetres": 0.28,
+        "tallMetres": 0.09
+      }
+    },
+    "intakeColor": {
+      "type": "color",
+      "volume": {
+        "forwardMetres": 0.235,
+        "leftMetres": 0.0,
+        "heightMetres": 0.045,
+        "lengthMetres": 0.10,
+        "widthMetres": 0.28,
+        "tallMetres": 0.09
+      }
+    },
+    "frontRange": {
+      "type": "distance",
+      "forwardMetres": 0.20,
+      "leftMetres": 0.0,
+      "heightMetres": 0.05,
+      "yawDegrees": 0.0,
+      "pitchDegrees": 0.0,
+      "maxRangeMetres": 2.0
+    },
+    "battery": {
+      "type": "voltage"
+    }
   }
 }

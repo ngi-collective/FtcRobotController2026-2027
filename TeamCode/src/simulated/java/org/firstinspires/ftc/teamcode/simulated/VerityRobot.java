@@ -15,6 +15,8 @@ import org.ngicollective.testframework.sim.FieldConfig;
 import org.ngicollective.testframework.sim.MotorConfig;
 import org.ngicollective.testframework.sim.Pose2d;
 import org.ngicollective.testframework.sim.RobotConfig;
+import org.ngicollective.testframework.sim.SensorConfig;
+import org.ngicollective.testframework.sim.ServoConfig;
 import org.ngicollective.testframework.sim.SimConfigFiles;
 
 import java.util.Map;
@@ -98,6 +100,38 @@ public class VerityRobot implements SimulatedRobot {
             builder.addMotor(motor);
         }
 
+        // Servos and sensors come from the same file, under the names an OpMode looks them up by.
+        // Declared here and wired to the field by MechanismModel, which refuses to build if the
+        // two ever disagree -- a sensor the configuration describes and the robot does not have
+        // would otherwise read nothing all match.
+        for (ServoConfig servo : config.servos().values()) {
+            if (servo.continuous()) {
+                builder.addCRServo(servo.name());
+            } else {
+                builder.addServo(servo.name());
+            }
+        }
+        for (SensorConfig sensor : config.sensors().values()) {
+            switch (sensor.kind()) {
+                case TOUCH:
+                    builder.addTouchSensor(sensor.name());
+                    break;
+                case COLOR:
+                    builder.addColorSensor(sensor.name());
+                    break;
+                case DISTANCE:
+                    builder.addDistanceSensor(sensor.name());
+                    break;
+                case VOLTAGE:
+                    builder.addVoltageSensor(sensor.name());
+                    break;
+                default:
+                    throw new IllegalStateException("this build cannot simulate a \""
+                            + sensor.kind() + "\" sensor, which \"" + sensor.name()
+                            + "\" is declared as");
+            }
+        }
+
         // The camera's view follows the robot, so its frame source needs the pose that the map it
         // is being added to will own. Hence the holder: the map cannot exist before the devices
         // that go in it, and the camera cannot read a pose before the map exists.
@@ -114,7 +148,8 @@ public class VerityRobot implements SimulatedRobot {
                 });
         builder.addWebcam(camera.name(), frames, camera.framesPerSecond());
 
-        FakeHardwareMap hardware = builder.withDrivetrain(config, field).build();
+        FakeHardwareMap hardware =
+                builder.withDrivetrain(config, field).withMechanisms(config).build();
         built[0] = hardware;
         for (Map.Entry<String, MotorConfig> entry : config.motors().entrySet()) {
             MotorConfig motor = entry.getValue();
