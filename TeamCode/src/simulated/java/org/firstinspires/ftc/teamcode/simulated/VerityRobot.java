@@ -19,7 +19,9 @@ import org.ngicollective.testframework.sim.SensorConfig;
 import org.ngicollective.testframework.sim.ServoConfig;
 import org.ngicollective.testframework.sim.SimConfigFiles;
 
+import java.nio.file.Path;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * The simulated stand-in for the team's robot: the same device names the real robot configuration
@@ -52,12 +54,41 @@ public class VerityRobot implements SimulatedRobot {
     private static final CameraIntrinsics NOMINAL_OPTICS =
             CameraIntrinsics.approximate(640, 480);
 
-    private final RobotConfig config;
-    private final FieldConfig field;
-    private final SimulatedScene scene;
+    /**
+     * Where {@link #create()} gets its numbers, read afresh for every robot it builds.
+     *
+     * <p>Not a copy parsed once in the constructor. Someone who moves the webcam edits the file
+     * and presses INIT, and the dashboard keeps one robot for the life of the session: a robot
+     * that had parsed its configuration on the way in would go on building the mount it was born
+     * with until the process was restarted, which is exactly the bug this shape exists to make
+     * impossible.</p>
+     */
+    private final Supplier<Snapshot> source;
+
+    /**
+     * What the most recent read found.
+     *
+     * <p>So that {@link #name()}, {@link #config()}, {@link #field()} and the hardware map are all
+     * describing one generation of the file. Two pictures of one robot must not disagree, and a
+     * browser drawing a chassis from these accessors beside a camera view rendered from
+     * {@code create()} is two pictures. Volatile because a session answers questions from threads
+     * other than the one that pressed INIT.</p>
+     */
+    private volatile Snapshot current;
 
     public VerityRobot() {
-        this(SimConfigFiles.robot(CONFIG_NAME), SimConfigFiles.field());
+        this(() -> new Snapshot(SimConfigFiles.robot(CONFIG_NAME), SimConfigFiles.field()));
+    }
+
+    /**
+     * Reads its numbers from a nominated directory rather than the team's.
+     *
+     * <p>For tests about re-reading itself: they need a configuration file they can edit, and
+     * editing {@code TeamCode/robot-config/verity.json} would be editing the robot that drives.</p>
+     */
+    public VerityRobot(Path configDirectory) {
+        this(() -> new Snapshot(SimConfigFiles.robot(configDirectory, CONFIG_NAME),
+                SimConfigFiles.field(configDirectory)));
     }
 
     /** For tests that want a robot or a field that differs from the one on disk. */
@@ -74,22 +105,35 @@ public class VerityRobot implements SimulatedRobot {
      * {@code SimConfigFiles.scenario(name).scene()} is where one comes from.</p>
      */
     public VerityRobot(RobotConfig config, FieldConfig field, SimulatedScene scene) {
-        this.config = config;
-        this.field = field;
-        // On this robot's field, whatever the scene was built with: a season's tag geometry is
-        // fixed by the game manual and knows nothing about which perimeter is in the room, while
-        // the drive model and the Dashboard Field View both take the configured one. Skipping this
-        // is how the camera comes to render a competition field beside a field view of a half one.
-        this.scene = scene.on(field);
+        this(fixed(new Snapshot(config, field, scene)));
+    }
+
+    private VerityRobot(Supplier<Snapshot> source) {
+        this.source = source;
+        // Read now as well as per create(), because a robot is asked its name before anything is
+        // built: the dashboard picks which configuration to drive by name. A file that will not
+        // parse therefore still fails at startup, where it is easiest to understand.
+        this.current = source.get();
+    }
+
+    /** Numbers handed in by a test, which do not change under it. */
+    private static Supplier<Snapshot> fixed(Snapshot snapshot) {
+        return () -> snapshot;
     }
 
     @Override
     public String name() {
-        return config.name();
+        return current.robot.name();
     }
 
     @Override
     public FakeHardwareMap create() {
+        // Read afresh. The point of keeping the numbers in a file is that editing the file changes
+        // what happens next, and "next" is the robot built by the next INIT.
+        Snapshot snapshot = source.get();
+        current = snapshot;
+        RobotConfig config = snapshot.robot;
+
         FakeHardwareMap.Builder builder = FakeHardwareMap.builder()
                 // followingChassis rather than followingYawRate: heading is now derived from the
                 // wheels, so the IMU reports what the chassis actually did. The rate-following and
@@ -148,8 +192,8 @@ public class VerityRobot implements SimulatedRobot {
                 });
         builder.addWebcam(camera.name(), frames, camera.framesPerSecond());
 
-        FakeHardwareMap hardware =
-                builder.withDrivetrain(config, field).withMechanisms(config).build();
+        FakeHardwareMap hardware = builder.withDrivetrain(config, snapshot.field)
+                .withMechanisms(config).build();
         built[0] = hardware;
         for (Map.Entry<String, MotorConfig> entry : config.motors().entrySet()) {
             MotorConfig motor = entry.getValue();
@@ -167,7 +211,7 @@ public class VerityRobot implements SimulatedRobot {
      * official BioBuzz field, which needs no file to be correct.</p>
      */
     protected SimulatedScene scene() {
-        return scene;
+        return current.scene;
     }
 
     private static Pose3d mountOf(CameraConfig camera) {
@@ -176,13 +220,43 @@ public class VerityRobot implements SimulatedRobot {
                 camera.yawDegrees(), camera.pitchDegrees(), camera.rollDegrees());
     }
 
-    /** The robot this configuration describes, for callers that need its geometry. */
+    /** The robot the most recent read describes, for callers that need its geometry. */
     public RobotConfig config() {
-        return config;
+        return current.robot;
     }
 
     /** The field this robot is simulated on. */
     public FieldConfig field() {
-        return field;
+        return current.field;
+    }
+
+    /**
+     * One reading of the configuration files: the robot, the field it drives on, and what its
+     * camera is looking at.
+     *
+     * <p>Together, because they are only correct together. The scene is conformed to the field in
+     * here rather than at each use, so there is nowhere for a caller to get a scene built for one
+     * perimeter and a drive model built for another.</p>
+     */
+    private static final class Snapshot {
+
+        final RobotConfig robot;
+        final FieldConfig field;
+        final SimulatedScene scene;
+
+        Snapshot(RobotConfig robot, FieldConfig field) {
+            this(robot, field, BioBuzzField.official());
+        }
+
+        Snapshot(RobotConfig robot, FieldConfig field, SimulatedScene scene) {
+            this.robot = robot;
+            this.field = field;
+            // On this robot's field, whatever the scene was built with: a season's tag geometry is
+            // fixed by the game manual and knows nothing about which perimeter is in the room,
+            // while the drive model and the Dashboard Field View both take the configured one.
+            // Skipping this is how the camera comes to render a competition field beside a field
+            // view of a half one.
+            this.scene = scene.on(field);
+        }
     }
 }
