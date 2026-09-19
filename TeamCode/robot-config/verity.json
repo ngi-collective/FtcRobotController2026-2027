@@ -1,14 +1,21 @@
 {
   "version": 1,
   "name": "Verity",
-  "chassis": { "widthMetres": 0.38, "lengthMetres": 0.40, "heightMetres": 0.05, "deckHeightMetres": 0.105 },
+  "chassis": {
+    "widthMetres": 0.38,
+    "lengthMetres": 0.40,
+    "heightMetres": 0.05,
+    "deckHeightMetres": 0.105,
+    "massKilograms": 14.0
+  },
   "drivetrain": {
     "type": "mecanum",
     "wheelRadiusMetres": 0.048,
     "gearRatio": 1.0,
     "trackWidthMetres": 0.32,
     "wheelBaseMetres": 0.29,
-    "strafeEfficiency": 0.8
+    "strafeEfficiency": 0.8,
+    "gripCoefficient": 0.9
   },
   "imu": { "name": "imu" },
   "camera": {
@@ -22,10 +29,28 @@
     "framesPerSecond": 30.0
   },
   "motors": {
-    "FL": { "role": "frontLeft",  "mirrored": true,  "rpm": 312.0, "ticksPerRevolution": 537.7 },
-    "FR": { "role": "frontRight", "mirrored": false, "rpm": 312.0, "ticksPerRevolution": 537.7 },
-    "BL": { "role": "backLeft",   "mirrored": true,  "rpm": 312.0, "ticksPerRevolution": 537.7 },
-    "BR": { "role": "backRight",  "mirrored": false, "rpm": 312.0, "ticksPerRevolution": 537.7 }
+    "FL":       { "role": "frontLeft",  "mirrored": true,  "rpm": 312.0,  "ticksPerRevolution": 537.7 },
+    "FR":       { "role": "frontRight", "mirrored": false, "rpm": 312.0,  "ticksPerRevolution": 537.7 },
+    "BL":       { "role": "backLeft",   "mirrored": true,  "rpm": 312.0,  "ticksPerRevolution": 537.7 },
+    "BR":       { "role": "backRight",  "mirrored": false, "rpm": 312.0,  "ticksPerRevolution": 537.7 },
+    "flywheel": { "role": "launcher",   "mirrored": false, "rpm": 6000.0, "ticksPerRevolution": 28.0 }
+  },
+  "launchers": {
+    "flywheel": {
+      "wheelRadiusMetres": 0.0508,
+      "transferEfficiency": 0.5,
+      "spinUpSeconds": 1.2,
+      "exitYawDegrees": 0.0,
+      "exitPitchDegrees": 75.0,
+      "mouth": {
+        "forwardMetres": 0.24,
+        "leftMetres": 0.0,
+        "heightMetres": 0.06,
+        "lengthMetres": 0.06,
+        "widthMetres": 0.20,
+        "tallMetres": 0.12
+      }
+    }
   },
   "servos": {
     "intake": {

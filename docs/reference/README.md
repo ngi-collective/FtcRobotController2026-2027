@@ -118,13 +118,49 @@ the manual's 43.95 in. pivot height (p.69).
   bottom of HIVE opening 53.5 in., top of HIVE opening 65.6 in. above TILES (Figure 9-10,
   p.71); CELLS 18.8 in. apart, opening 20 x 14 x 12 in. deep (p.70).
 - 4 FLOWERS on the perimeter wall, top opening ~4 in. dia at ~21.5 in. above the TILES,
-  1.25 in. backstop, 3.55 x 3.57 in. retrieval opening at the bottom (p.72).
+  1.25 in. backstop, 3.55 x 3.57 in. retrieval opening at the bottom (p.72). Three rings:
+  the upper and middle joined by four HIPS pipes, the middle and lower by square extrusion
+  on the perimeter-wall side only, which is what leaves the retrieval opening open.
   CAD-measured centers, in 90 deg rotational symmetry about FIELD center (inches):
-  `(+23.39, z=+68.04)`, `(x=+68.04, -23.39)`, `(x=-68.04, +23.39)`, `(-23.39, z=-68.04)`;
-  top ring at y = 21.25.
+  `(+23.39, z=+68.04)`, `(x=+68.04, -23.39)`, `(x=-68.04, +23.39)`, `(-23.39, z=-68.04)`.
 - Alliance-coloured features a vision pipeline could key on: red/blue CELLS (coloured
   rails, translucent panels), red/blue GARDEN and LOADING ZONE gaffer tape, BIOBUZZ logo
   panels on the frame, yellow POLLEN and red/blue NECTAR.
+
+### HIVE and FLOWER parts derived from `biobuzz-field-cad.step`
+
+Same frame as the AprilTag table above: CAD origin at FIELD center, **+Y up**, red at
+**-X**, audience at **+Z**. Heights are `y`; everything in inches.
+
+| Part | Number | Size | Placement |
+| --- | --- | --- | --- |
+| `am-5876: A-Frame Leg` | 4 | 1 x 1 x 45.75 | foot `(+/-23.81, y=0.53, +/-18.56)` to apex `(+/-12.74, y=41.09, +/-0.51)` |
+| `am-5875: A-Frame Top Bar` | 1 | 1 x 1 x 24 | `(0, y=41.45, 0)`, along x |
+| `am-5877: ACM Panel` | 2 | 30.13 x 11.12 x 0.118 | `(0, y=39.18, +/-1.97)`, leaning 24 deg with the frame |
+| `am-5878: Sheet Metal Foot Bar` | 2 | 2.0 (x) x 38.95 (z) x 2.149 (y) | `(+/-23.75, y=1.07, 0)`, on the TILES |
+| `am-5863: Axle Holder` | 2 | 2.82 x 2.71 x 14.91 | `(+/-12.06, y=42.96, +/-0.69)` |
+| `am-5873: Goal Pivot Bracket` | 2 per HIVE | 13.78 x 3.59 x 0.07 | `(-12.20 and -13.28, y=43.15, -0.46)` on the red HIVE |
+| CELL interior | 4 | 20 x 14 x 12 deep | closed end 9.42 from the pivot, offset 5.53 along the CELL's own up |
+| `am-5857: Flower Layer C` (upper ring) | 4 | 5.86 x 4.80 oval, 1.19 thick | `y=20.81` |
+| `am-5858: Flower Layer B` (middle ring) | 4 | 5.88 x 5.07 oval, 1.40 thick | `y=4.59` |
+| `am-5859: Flower Layer X` (lower ring) | 4 | 5.88 x 4.92 oval, 0.90 thick | `y=0.25` |
+| `am-5862: Flower HIPS Pipe` | 4 per FLOWER | 0.53 dia x 17.0 | `y=4.25` to `21.25`, at +/-48 and +/-137 deg to the facing, 2.2-2.7 out |
+| `am-5892: Flower Peanut Support` | 2 per FLOWER | 1 x 1 x 3.75 | `y=0.35` to `4.10`, at +/-145 deg to the facing, 2.21 out |
+| `am-5884: Flower Backstop` | 4 | 3.86 x 3.75 x 0.42 | horizontal, `y=22.45`, 0.76 toward the wall |
+
+All four CELLs are identical to 0.01 in. in their own pivot-relative frame, and a CELL is
+30 deg off level in either tip state, so the two stable positions are **60 deg** apart.
+Rotating one measured AprilTag plate by that lands on the other measured plate to 0.02 in.
+Four of the manual's published figures are reproduced rather than set: frame 49.5 x 38.96
+(vs 49.46 x 38.95), CELLs 18.84 apart (vs 18.8), HIVE opening 53.39-65.51 (vs 53.5-65.6),
+FLOWER retrieval opening 3.49 tall (vs 3.55).
+
+Per-part colours are in the STEP file as `COLOUR_RGB` on each part's `STYLED_ITEM`, and
+they are meaningful: TILES `(128,128,128)`, POLLEN `(255,239,63)`, red/blue cable ties
+`(221,82,40)` / `(22,81,176)`. HIVE skins, A-frame and ACM panels are `(230,230,230)`;
+FLOWER upper ring `(255,186,82)`, other rings `(48,48,48)`, HIPS pipe `(95,167,61)`,
+backstop `(100,28,101)`. The Goal Ribs and NECTAR carry a styled item with no `COLOUR_RGB`,
+so their red and blue are not recoverable this way.
 
 ### SCORING ELEMENTS (manual §9.8 p.74, §10.3.1 pp.83-84)
 
@@ -133,3 +169,97 @@ the manual's 43.95 in. pivot height (p.69).
 - Not perfectly spherical; sizes vary.
 - Staging: 4 POLLEN in each of 4 FLOWERS, 4 in each GARDEN, 4 pre-loaded per ROBOT;
   3 NECTAR in each upward-facing CELL, 5 in each ALLIANCE AREA.
+
+### Scoring (manual §10.5 pp.86-91, Table 10-2)
+
+| Achievement | AUTO | TELEOP |
+| --- | --- | --- |
+| LEAVE - no longer contacting the perimeter wall | 3 | - |
+| PARK - at least partially in the LOADING ZONE | 5 | 5 |
+| HIVE TIP | 20 | 20 |
+| POLLEN and/or NECTAR remaining in a CELL, each | - | 2 |
+| FLOWER Bottom NECTAR Bonus | - | 5 |
+| POLLEN and/or NECTAR in an owned FLOWER, each | - | 2 |
+| POLLEN and/or NECTAR in a GARDEN, each | - | 1 |
+
+Ranking points: SWARM (LEAVE + PARK at or above a threshold), POLLINATOR 1 and POLLINATOR 2
+(number of TIPS at or above a threshold), 1 each; WIN 3.
+
+The clauses that decide whether something scores, which are easier to get wrong than the numbers:
+
+- **CELL** (§10.5.1): "At the end of the MATCH, any POLLEN and/or NECTAR left in an upward-facing
+  CELL will earn points for that ALLIANCE." Points follow the CELL, so an opponent's NECTAR in
+  your CELL scores for you; a downward-facing CELL scores nothing. No "partially within" clause,
+  unlike the two below.
+- **HIVE TIP** (§10.5.1): the HIVE moves between its two stable states *and* the damper that was
+  clear of the frame begins to contact it. LAUNCHING into the upward-facing CELL is the only
+  allowed way to cause one (G417).
+- **FLOWER** (§10.5.2): an element scores when "at least partially within the FLOWER scoring
+  volume: between the top ring and the middle ring". The ALLIANCE with the **top-most** NECTAR of
+  its colour owns the FLOWER and scores everything in it, whoever put it there; the **bottom-most**
+  earns the separate bonus. Scoring cannot begin until one minute remains (G410), and only by
+  placing elements in the top.
+- **GARDEN** (§10.5.3): at least partially in the zone; scores for the ALLIANCE whose colour the
+  GARDEN is, whoever placed it, and either ALLIANCE may remove elements from either GARDEN.
+- A MATCH is a 30 s AUTO, an 8 s transition, and a 2 min TELEOP (§10.1).
+
+### What the CELL's geometry forces on a launcher (derived, not quoted)
+
+Worked out from the numbers above rather than stated in the manual, and load-bearing enough to
+write down once:
+
+- A raised CELL's **mouth centre** is 1.51 m above the tiles and 0.30 m from the FIELD's centre
+  line on the side it faces, being the CELL interior's centre walked half its 12 in. depth along
+  its own outward normal. That normal sits **30° above horizontal**, so the opening is a nearly
+  vertical rectangle leaning back.
+- A legal ROBOT therefore cannot stand more than about **1.4 m** from it along that axis: the
+  perimeter is 1.79 m out and half a chassis plus the mouth of a launcher eats the rest. The
+  straight line from a ball on the tiles to the CELL's mouth is already close to **60°**, so a
+  flatter launcher cannot reach the opening at all, at any speed.
+- A ball must also arrive with its velocity pointing *into* the opening, which means shallower
+  than 60° above horizontal, and slowly enough not to bounce back out: the basket's back panel
+  returns about a third of what hits it, straight back at the mouth it came in through.
+- Between them those leave a **steep, slow lob**: from a 0.86 m stand-off a 75° launch needs
+  5.6 m/s, and the band that stays in the basket is about ±5% of that. A 4 in. compliant wheel on
+  a bare goBILDA 5203 (6000 rpm) running at half transfer gives 16 m/s flat out, so this is a
+  third of a stick and the interesting part of the range is nowhere near the top of it.
+- The speed needed is **not monotonic in range**. At a fixed angle it bottoms out at
+  `2 rise / tan p` &mdash; 0.79 m for a raised CELL at 75&deg; &mdash; and climbs on both sides, so
+  a closer shot is harder than a mid-range one. Inside `rise / tan p` (0.39 m) there is no shot at
+  any speed: the ball cannot come down steeply enough to be inside the opening at that height. A
+  driver parked under the HIVE has to reverse, not spin faster.
+- The **cluster origin is the aim point**, within 1.42 in. FIRST's member offsets
+  (`+7.1874 in` rise, `-5.622 in` depth) walked back from the CAD's tag plate land 1.40 in below
+  the centre of the CELL opening and 0.21 in outside its plane &mdash; identically for all four
+  CELLs, in both tip states. So an OpMode can shoot at what it detected, with no offset table.
+  Three sources agree and none of them mentions the others; see
+  `BioBuzzFieldTest.everyClusterOriginSitsAtItsCellsOpening`.
+
+### What it takes to tip a HIVE (derived, not quoted)
+
+The manual says a HIVE "will hold its position until enough POLLEN or NECTAR are LAUNCHED into the
+upwards-facing CELL" (&sect;9.6) and never says how many. Two things it does say bracket the
+answer, and both are needed:
+
+- A MATCH stages **three NECTAR in each upward-facing CELL** (&sect;10.3.1), and the field then
+  stands there. A ball settles about 0.24 m horizontally from the pivot axis, so three NECTAR
+  weigh **0.34 N&middot;m** on it and a HIVE that tipped under its own match setup would be
+  unusable.
+- A **TIP is worth 20** against 2 per element left in a CELL, so ten elements is the break-even. A
+  HIVE needing more than ten POLLEN would make tipping strictly worse than filling, and the
+  manual's own overview has ROBOTS tipping inside a 30-second AUTO.
+
+So the hold is between 0.34 and about 1.1 N&middot;m. The simulator uses 0.6, which the manual
+cannot confirm; measure it on a real field by putting POLLEN into a raised CELL one at a time and
+counting, or by pushing the lip of a CELL with a fish scale at a known radius.
+
+Two consequences worth knowing before designing a shooter:
+
+- **The threshold is on arriving, not on weight.** Three NECTAR placed in a CELL stay; the same
+  three dropped from 10 cm above its mouth tip it. Once a HIVE leaves its stop the hold falls away
+  towards the midpoint while the balls roll outwards as the CELL flattens, so anything that starts
+  it moving takes it the whole way. This is why the manual can say LAUNCHING is the only legal way
+  to cause a TIP.
+- **A tip is a motion, not an instant**: 0.4 to 1.1 s depending on how hard the HIVE was hit,
+  which is the window the manual's warning about "LAUNCHING at the downward-facing CELL while a
+  HIVE is tipping" lives in.

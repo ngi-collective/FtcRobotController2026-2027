@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode.simulated;
 
 import org.ngicollective.testframework.behavior.ImuBehaviors;
+import org.ngicollective.testframework.behavior.MotorBehaviors;
 import org.ngicollective.testframework.camera.CameraIntrinsics;
 import org.ngicollective.testframework.camera.SceneFrameSource;
 import org.ngicollective.testframework.camera.SimulatedCamera;
@@ -10,6 +11,7 @@ import org.ngicollective.testframework.hardware.SimulatedRobot;
 import org.ngicollective.testframework.season.BioBuzzField;
 import org.ngicollective.testframework.sim.CameraConfig;
 import org.ngicollective.testframework.sim.FieldConfig;
+import org.ngicollective.testframework.sim.LauncherConfig;
 import org.ngicollective.testframework.sim.MotorConfig;
 import org.ngicollective.testframework.sim.Pose2d;
 import org.ngicollective.testframework.sim.RobotConfig;
@@ -156,7 +158,18 @@ public class VerityRobot implements SimulatedRobot {
                 // an IMU that disagrees with the drivetrain on purpose.
                 .addImu(config.imuName(), ImuBehaviors.followingChassis());
         for (String motor : config.motors().keySet()) {
-            builder.addMotor(motor);
+            LauncherConfig launcher = config.launchers().get(motor);
+            if (launcher == null) {
+                builder.addMotor(motor);
+                continue;
+            }
+            // A flywheel has inertia and the rest of this robot does not. Every other motor here
+            // is ideal -- it reaches the speed it was asked for between one tick and the next --
+            // and that is a fair model of a wheel against a floor with the whole robot's mass
+            // behind it. It is not a fair model of a launcher: the seconds a flywheel spends
+            // coming up to speed are the reason an OpMode has to wait for it, and with an ideal
+            // motor firing too early is a mistake nobody could make.
+            builder.addMotor(motor, MotorBehaviors.ramping(launcher.spinUpSeconds()));
         }
 
         // Servos and sensors come from the same file, under the names an OpMode looks them up by.
