@@ -44,6 +44,22 @@ public class VerityRobot implements SimulatedRobot {
     private static final String CONFIG_NAME = "verity";
 
     /**
+     * Which robot the default constructor drives.
+     *
+     * <p>The team's robot is the default, but a checkout iterating on a second design selects it
+     * the way everything else is selected: through the environment. {@code SIM_ROBOT=pickup mise
+     * run dashboard} drives the pickup robot; the system property {@code sim.robot} wins over the
+     * variable, for a JVM launched by a test harness that cannot reach the shell.</p>
+     */
+    private static String configName() {
+        String name = System.getProperty("sim.robot");
+        if (name == null || name.isEmpty()) {
+            name = System.getenv("SIM_ROBOT");
+        }
+        return (name == null || name.isEmpty()) ? CONFIG_NAME : name;
+    }
+
+    /**
      * The camera's optics before an OpMode has chosen a resolution: a nominal 60&deg; webcam.
      *
      * <p>Not a placeholder. Once {@code VisionPortal} starts streaming, the simulated camera
@@ -86,8 +102,8 @@ public class VerityRobot implements SimulatedRobot {
     private final Path configurationFile;
 
     public VerityRobot() {
-        this(() -> new Snapshot(SimConfigFiles.robot(CONFIG_NAME), SimConfigFiles.field()),
-                SimConfigFiles.robotFile(CONFIG_NAME));
+        this(() -> new Snapshot(SimConfigFiles.robot(configName()), SimConfigFiles.field()),
+                SimConfigFiles.robotFile(configName()));
     }
 
     /**

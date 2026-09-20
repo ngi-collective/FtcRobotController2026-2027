@@ -12,7 +12,7 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 
 public class Constants {
     public static FollowerConstants followerConstants = new FollowerConstants()
-            .mass(4.808079);
+            .mass(14.0);
     public static MecanumConstants driveConstants = new MecanumConstants()
             .maxPower(1)
             .rightFrontMotorName("FR")
@@ -28,15 +28,22 @@ public class Constants {
             .rightRearMotorName("BR")
             .leftRearMotorName("BL")
             .leftFrontMotorName("FL")
-            .leftFrontEncoderDirection(Encoder.FORWARD)
-            .leftRearEncoderDirection(Encoder.FORWARD)
+            .leftFrontEncoderDirection(Encoder.REVERSE)
+            .leftRearEncoderDirection(Encoder.REVERSE)
             .rightFrontEncoderDirection(Encoder.FORWARD)
             .rightRearEncoderDirection(Encoder.FORWARD)
-            .robotWidth(15)
-            .robotLength(16)
-            .strafeTicksToInches(-0.70)
-            .turnTicksToInches(0.05)
-            .forwardTicksToInches(2);
+            // Track width and wheelbase in inches, from pickup.json (0.32 m, 0.29 m). The localizer
+            // divides the turn term by these, so a value that disagrees with the chassis silently
+            // scales every heading it reports.
+            .robotWidth(12.598)
+            .robotLength(11.417)
+            // Multipliers derived from pickup.json, not tuned: the drive-encoder localizer sums all
+            // four encoders without dividing by four, so each is inches-per-(four ticks). Wheel
+            // circumference / ticks-per-rev / 4; strafe additionally scales by strafe efficiency
+            // (0.8), and turn converts to radians (pi * wheel radius / ticks-per-rev).
+            .strafeTicksToInches(0.004417)
+            .turnTicksToInches(0.011041)
+            .forwardTicksToInches(0.005521);
 
     public static PathConstraints pathConstraints = new PathConstraints(0.99, 100, 1, 1);
 
