@@ -141,6 +141,8 @@ Same frame as the AprilTag table above: CAD origin at FIELD center, **+Y up**, r
 | `am-5863: Axle Holder` | 2 | 2.82 x 2.71 x 14.91 | `(+/-12.06, y=42.96, +/-0.69)` |
 | `am-5873: Goal Pivot Bracket` | 2 per HIVE | 13.78 x 3.59 x 0.07 | `(-12.20 and -13.28, y=43.15, -0.46)` on the red HIVE |
 | CELL interior | 4 | 20 x 14 x 12 deep | closed end 9.42 from the pivot, offset 5.53 along the CELL's own up |
+| `am-5866: Goal Rib` | 2 per CELL | 21.3 x 20.3 plate, alliance-coloured | normal along the CELL's depth, 11.89 apart: one behind the closed end, one around the mouth |
+| `am-5869/5871/5888: Goal Top / Back / Bottom Skin` | 1 each per CELL | sheet | the clear panels between the ribs; the bottom one carries the AprilTag Cluster |
 | `am-5857: Flower Layer C` (upper ring) | 4 | 5.86 x 4.80 oval, 1.19 thick | `y=20.81` |
 | `am-5858: Flower Layer B` (middle ring) | 4 | 5.88 x 5.07 oval, 1.40 thick | `y=4.59` |
 | `am-5859: Flower Layer X` (lower ring) | 4 | 5.88 x 4.92 oval, 0.90 thick | `y=0.25` |
@@ -154,6 +156,13 @@ Rotating one measured AprilTag plate by that lands on the other measured plate t
 Four of the manual's published figures are reproduced rather than set: frame 49.5 x 38.96
 (vs 49.46 x 38.95), CELLs 18.84 apart (vs 18.8), HIVE opening 53.39-65.51 (vs 53.5-65.6),
 FLOWER retrieval opening 3.49 tall (vs 3.55).
+
+A CELL is therefore **not a box**. The rib's outline, measured from the plate's own face and given
+here in inches from the CELL interior's centre along the CELL's own left and up, is a pentagon:
+`(±10.5, -8.50)` at the base, `(±10.5, +0.33)` at the shoulder and `(0, +7.53)` at the apex, the
+roof edges running at 34°. The manual's "20 x 14 in opening" is the rectangle inside that, and it
+is the rectangle the simulator collides with; the pentagon is what it draws. Skins are clear
+polycarbonate, which is why the NECTAR in a CELL is countable from the audience.
 
 Per-part colours are in the STEP file as `COLOUR_RGB` on each part's `STYLED_ITEM`, and
 they are meaningful: TILES `(128,128,128)`, POLLEN `(255,239,63)`, red/blue cable ties
