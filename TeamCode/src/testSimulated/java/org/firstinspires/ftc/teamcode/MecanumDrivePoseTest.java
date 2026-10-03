@@ -4,10 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
 import org.junit.jupiter.api.Test;
-import org.ngicollective.testframework.hardware.FakeHardwareMap;
-import org.ngicollective.testframework.harness.LinearOpModeHarness;
-import org.ngicollective.testframework.harness.OpModeHarness;
-import org.ngicollective.testframework.sim.Pose2d;
+import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
+import org.ngicollective.ftcsim.harness.LinearOpModeHarness;
+import org.ngicollective.ftcsim.harness.OpModeHarness;
+import org.ngicollective.ftcsim.sim.Pose2d;
 
 /**
  * Where the robot actually ends up for a given stick input, driven through the real

@@ -7,10 +7,10 @@ import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.ngicollective.testframework.dashboard.LocalDashboardBackend;
-import org.ngicollective.testframework.dashboard.protocol.Alliance;
-import org.ngicollective.testframework.dashboard.protocol.DeviceState;
-import org.ngicollective.testframework.season.BioBuzzField;
+import org.ngicollective.ftcsim.dashboard.LocalDashboardBackend;
+import org.ngicollective.ftcsim.dashboard.protocol.Alliance;
+import org.ngicollective.ftcsim.dashboard.protocol.DeviceState;
+import org.ngicollective.ftcsim.season.BioBuzzField;
 
 import java.util.Collections;
 import java.util.List;

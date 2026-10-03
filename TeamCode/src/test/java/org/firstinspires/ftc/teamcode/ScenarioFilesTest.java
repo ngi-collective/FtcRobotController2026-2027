@@ -2,16 +2,16 @@ package org.firstinspires.ftc.teamcode;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.ngicollective.testframework.camera.FieldTag;
-import org.ngicollective.testframework.camera.GameElement;
-import org.ngicollective.testframework.camera.SimulatedScene;
-import org.ngicollective.testframework.camera.TagCluster;
-import org.ngicollective.testframework.camera.Vec3;
-import org.ngicollective.testframework.season.BioBuzzElements;
-import org.ngicollective.testframework.season.BioBuzzField;
-import org.ngicollective.testframework.season.BioBuzzScenario;
-import org.ngicollective.testframework.season.BioBuzzScore;
-import org.ngicollective.testframework.sim.SimConfigFiles;
+import org.ngicollective.ftcsim.camera.FieldTag;
+import org.ngicollective.ftcsim.camera.GameElement;
+import org.ngicollective.ftcsim.camera.SimulatedScene;
+import org.ngicollective.ftcsim.camera.TagCluster;
+import org.ngicollective.ftcsim.camera.Vec3;
+import org.ngicollective.ftcsim.season.BioBuzzElements;
+import org.ngicollective.ftcsim.season.BioBuzzField;
+import org.ngicollective.ftcsim.season.BioBuzzScenario;
+import org.ngicollective.ftcsim.season.BioBuzzScore;
+import org.ngicollective.ftcsim.sim.SimConfigFiles;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
