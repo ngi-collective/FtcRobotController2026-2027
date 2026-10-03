@@ -12,6 +12,7 @@ import org.ngicollective.testframework.hardware.FakeHardwareMap;
 import org.ngicollective.testframework.hardware.FakeWebcam;
 import org.ngicollective.testframework.sim.FieldConfig;
 import org.ngicollective.testframework.sim.Pose2d;
+import org.ngicollective.testframework.season.BioBuzzScenario;
 import org.ngicollective.testframework.sim.SimConfigFiles;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,7 +30,7 @@ class SimulatedCameraWiringTest {
 
     private static FakeHardwareMap robotLookingAt(String scenario) {
         return new VerityRobot(SimConfigFiles.robot("verity"), FieldConfig.standard(),
-                SimConfigFiles.scenario(scenario).scene()).create();
+                BioBuzzScenario.named(scenario).scene()).create();
     }
 
     @Test
@@ -60,7 +61,7 @@ class SimulatedCameraWiringTest {
                 CameraIntrinsics.approximate(640, 480),
                 Pose3d.ofDegrees(new Vec3(0.16, 0.0, 0.25), 0.0, -10.0, 0.0));
         SceneFrameSource source = new SceneFrameSource(
-                SimConfigFiles.scenario("practice-balls").scene(), ballCamera,
+                BioBuzzScenario.named("practice-balls").scene(), ballCamera,
                 new SceneFrameSource.PoseSource() {
                     @Override
                     public Pose2d pose() {

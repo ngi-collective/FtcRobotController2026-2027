@@ -8,6 +8,7 @@ import org.ngicollective.testframework.camera.SimulatedCamera;
 import org.ngicollective.testframework.camera.SimulatedScene;
 import org.ngicollective.testframework.hardware.FakeHardwareMap;
 import org.ngicollective.testframework.hardware.SimulatedRobot;
+import org.ngicollective.testframework.season.BioBuzz;
 import org.ngicollective.testframework.season.BioBuzzField;
 import org.ngicollective.testframework.sim.CameraConfig;
 import org.ngicollective.testframework.sim.FieldConfig;
@@ -15,6 +16,7 @@ import org.ngicollective.testframework.sim.LauncherConfig;
 import org.ngicollective.testframework.sim.MotorConfig;
 import org.ngicollective.testframework.sim.Pose2d;
 import org.ngicollective.testframework.sim.RobotConfig;
+import org.ngicollective.testframework.sim.Season;
 import org.ngicollective.testframework.sim.SensorConfig;
 import org.ngicollective.testframework.sim.ServoConfig;
 import org.ngicollective.testframework.sim.SimConfigFiles;
@@ -113,7 +115,7 @@ public class VerityRobot implements SimulatedRobot {
      * <p>The official field is the default because it needs no file to be right. A scenario is
      * for the arrangements that are a choice &mdash; a HIVE tipped the other way, balls left where
      * they broke autonomous last weekend &mdash; and
-     * {@code SimConfigFiles.scenario(name).scene()} is where one comes from.</p>
+     * {@code BioBuzzScenario.named(name).scene()} is where one comes from.</p>
      */
     public VerityRobot(RobotConfig config, FieldConfig field, SimulatedScene scene) {
         this(fixed(new Snapshot(config, field, scene)), null);
@@ -250,6 +252,12 @@ public class VerityRobot implements SimulatedRobot {
     /** The field this robot is simulated on. */
     public FieldConfig field() {
         return current.field;
+    }
+
+    /** Verity is built for BioBuzz: its scenarios stage HIVEs and its field scores CELLs. */
+    @Override
+    public Season season() {
+        return BioBuzz.SEASON;
     }
 
     /**

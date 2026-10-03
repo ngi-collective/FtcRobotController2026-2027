@@ -19,6 +19,7 @@ import org.ngicollective.testframework.season.BioBuzzScore;
 import org.ngicollective.testframework.sim.FieldConfig;
 import org.ngicollective.testframework.sim.Pose2d;
 import org.ngicollective.testframework.sim.RobotConfig;
+import org.ngicollective.testframework.season.BioBuzzScenario;
 import org.ngicollective.testframework.sim.SimConfigFiles;
 
 import java.util.Collections;
@@ -56,7 +57,7 @@ class SweepAndShootAutoTest {
     @Test
     void theAutoSweepsSixPollenIntoTheRaisedCellAndTipsIt() throws InterruptedException {
         RobotConfig config = SimConfigFiles.robot("verity");
-        SimulatedScene scene = SimConfigFiles.scenario("auto-sweep").scene();
+        SimulatedScene scene = BioBuzzScenario.named("auto-sweep").scene();
         FakeHardwareMap hardware = new VerityRobot(config, FieldConfig.standard(), scene).create();
         FieldPhysics world = FieldPhysics.of(scene.elements(), scene.structures(),
                 FieldConfig.standard(), config);
@@ -127,7 +128,7 @@ class SweepAndShootAutoTest {
     @Test
     void offItsStartSquareTheSameRoutineThrowsThePollenOnTheFloor() throws InterruptedException {
         RobotConfig config = SimConfigFiles.robot("verity");
-        SimulatedScene scene = SimConfigFiles.scenario("auto-sweep").scene();
+        SimulatedScene scene = BioBuzzScenario.named("auto-sweep").scene();
         FakeHardwareMap hardware = new VerityRobot(config, FieldConfig.standard(), scene).create();
         FieldPhysics world = FieldPhysics.of(scene.elements(), scene.structures(),
                 FieldConfig.standard(), config);

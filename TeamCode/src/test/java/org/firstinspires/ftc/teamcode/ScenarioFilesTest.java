@@ -7,9 +7,10 @@ import org.ngicollective.testframework.camera.GameElement;
 import org.ngicollective.testframework.camera.SimulatedScene;
 import org.ngicollective.testframework.camera.TagCluster;
 import org.ngicollective.testframework.camera.Vec3;
+import org.ngicollective.testframework.season.BioBuzzElements;
 import org.ngicollective.testframework.season.BioBuzzField;
+import org.ngicollective.testframework.season.BioBuzzScenario;
 import org.ngicollective.testframework.season.BioBuzzScore;
-import org.ngicollective.testframework.sim.ScenarioConfig;
 import org.ngicollective.testframework.sim.SimConfigFiles;
 
 import java.io.IOException;
@@ -40,7 +41,7 @@ class ScenarioFilesTest {
 
         for (Path file : files) {
             String name = file.getFileName().toString().replace(".json", "");
-            ScenarioConfig scenario = SimConfigFiles.scenario(name);
+            BioBuzzScenario scenario = BioBuzzScenario.named(name);
             assertTrue(!scenario.name().isEmpty(), name + " should name itself");
 
             // Every scenario is still the BioBuzz field, however it is arranged.
@@ -75,7 +76,7 @@ class ScenarioFilesTest {
         assertEquals(onDisk, offered, "the picker must offer exactly the committed scenarios");
         for (String name : offered) {
             // The round trip, which is the contract: every name offered is a name that loads.
-            assertTrue(!SimConfigFiles.scenario(name).name().isEmpty(),
+            assertTrue(!BioBuzzScenario.named(name).name().isEmpty(),
                     name + " is offered but does not load");
         }
     }
@@ -85,7 +86,7 @@ class ScenarioFilesTest {
         // The point of that scenario: the arrangement the CAD did not capture.
         double officialRedAudience = heightOf(BioBuzzField.official(), BioBuzzField.RED_AUDIENCE);
         double tippedRedAudience = heightOf(
-                SimConfigFiles.scenario("hives-tipped-back").scene(), BioBuzzField.RED_AUDIENCE);
+                BioBuzzScenario.named("hives-tipped-back").scene(), BioBuzzField.RED_AUDIENCE);
 
         assertTrue(tippedRedAudience < officialRedAudience,
                 "tipped back, the red audience CELL should now be the low one: "
@@ -94,7 +95,7 @@ class ScenarioFilesTest {
 
     @Test
     void thePracticeScenarioPlacesBallsOfEachKind() {
-        List<GameElement> elements = SimConfigFiles.scenario("practice-balls").elements();
+        List<GameElement> elements = BioBuzzScenario.named("practice-balls").elements();
 
         assertEquals(6, elements.size());
         int pollen = 0;
@@ -103,11 +104,11 @@ class ScenarioFilesTest {
             if ("POLLEN".equals(element.name())) {
                 pollen++;
                 // A scenario chooses where a ball is, never how big it is: that is the season's.
-                assertEquals(GameElement.POLLEN_DIAMETER_METRES,
+                assertEquals(BioBuzzElements.POLLEN_DIAMETER_METRES,
                         element.radiusMetres() * 2.0, 1e-9);
             } else {
                 nectar++;
-                assertEquals(GameElement.NECTAR_DIAMETER_METRES,
+                assertEquals(BioBuzzElements.NECTAR_DIAMETER_METRES,
                         element.radiusMetres() * 2.0, 1e-9);
             }
         }
@@ -126,7 +127,7 @@ class ScenarioFilesTest {
                 .getBytes(StandardCharsets.UTF_8));
 
         IllegalArgumentException failure =
-                assertThrows(IllegalArgumentException.class, () -> ScenarioConfig.load(file));
+                assertThrows(IllegalArgumentException.class, () -> BioBuzzScenario.load(file));
         assertTrue(failure.getMessage().contains("GOLD_NECTAR"), failure.getMessage());
         assertTrue(failure.getMessage().contains("POLLEN"),
                 "the failure should say what is allowed: " + failure.getMessage());
@@ -140,7 +141,7 @@ class ScenarioFilesTest {
         // that a CELL-staged ball lands in the CELL: the six are placed from the CELL's own
         // geometry, and the score is computed by containment against that same geometry, so a ball
         // put a few inches out would score nothing.
-        ScenarioConfig staging = SimConfigFiles.scenario("match-staging");
+        BioBuzzScenario staging = BioBuzzScenario.named("match-staging");
         SimulatedScene scene = staging.scene();
 
         BioBuzzScore score = BioBuzzScore.of(scene.scoringVolumes(), scene.elements(),
@@ -156,12 +157,12 @@ class ScenarioFilesTest {
         // Three NECTAR at one point would be interpenetrating before the first step, and the
         // solver's first act would be to fire them apart -- emptying the basket this scenario
         // exists to fill. They have to start at least a diameter apart.
-        List<GameElement> staged = SimConfigFiles.scenario("match-staging").elements();
+        List<GameElement> staged = BioBuzzScenario.named("match-staging").elements();
 
         for (int first = 0; first < staged.size(); first++) {
             for (int second = first + 1; second < staged.size(); second++) {
                 Vec3 apart = staged.get(first).centre().minus(staged.get(second).centre());
-                assertTrue(apart.length() >= GameElement.NECTAR_DIAMETER_METRES - 1e-9,
+                assertTrue(apart.length() >= BioBuzzElements.NECTAR_DIAMETER_METRES - 1e-9,
                         "elements " + first + " and " + second + " start " + apart.length()
                                 + " m apart, which is inside one another");
             }
@@ -179,7 +180,7 @@ class ScenarioFilesTest {
                 + " \"xMetres\": 0, \"yMetres\": 0}}}").getBytes(StandardCharsets.UTF_8));
 
         IllegalArgumentException failure =
-                assertThrows(IllegalArgumentException.class, () -> ScenarioConfig.load(file));
+                assertThrows(IllegalArgumentException.class, () -> BioBuzzScenario.load(file));
         assertTrue(failure.getMessage().contains("confused"), failure.getMessage());
     }
 
@@ -194,7 +195,7 @@ class ScenarioFilesTest {
                 .getBytes(StandardCharsets.UTF_8));
 
         IllegalArgumentException failure =
-                assertThrows(IllegalArgumentException.class, () -> ScenarioConfig.load(file));
+                assertThrows(IllegalArgumentException.class, () -> BioBuzzScenario.load(file));
         assertTrue(failure.getMessage().contains("RED GOAL"), failure.getMessage());
         assertTrue(failure.getMessage().contains(BioBuzzField.RED_AUDIENCE),
                 "the failure should list the CELLs that exist: " + failure.getMessage());
@@ -207,7 +208,7 @@ class ScenarioFilesTest {
         // Quietly falling back to the official field would let a test pass against an arrangement
         // nobody asked for.
         IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
-                () -> SimConfigFiles.scenario("practise-balls"));
+                () -> BioBuzzScenario.named("practise-balls"));
 
         assertTrue(failure.getMessage().contains("practise-balls"), failure.getMessage());
         assertTrue(failure.getMessage().contains("scenarios"), failure.getMessage());
