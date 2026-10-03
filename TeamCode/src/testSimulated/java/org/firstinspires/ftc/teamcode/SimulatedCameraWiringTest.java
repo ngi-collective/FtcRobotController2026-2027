@@ -10,9 +10,9 @@ import org.ngicollective.testframework.camera.SyntheticFrame;
 import org.ngicollective.testframework.camera.Vec3;
 import org.ngicollective.testframework.hardware.FakeHardwareMap;
 import org.ngicollective.testframework.hardware.FakeWebcam;
+import org.ngicollective.testframework.season.BioBuzzScenario;
 import org.ngicollective.testframework.sim.FieldConfig;
 import org.ngicollective.testframework.sim.Pose2d;
-import org.ngicollective.testframework.season.BioBuzzScenario;
 import org.ngicollective.testframework.sim.SimConfigFiles;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
