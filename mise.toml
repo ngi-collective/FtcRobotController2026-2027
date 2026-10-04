@@ -13,26 +13,64 @@ android-sdk = "22.0"
 # Tasks run inside the mise env, so JAVA_HOME and ANDROID_HOME are already set and
 # no `mise exec --` prefix is needed. Extra flags pass through: `mise run build --info`.
 #
-# TeamCode is the only application module (FtcRobotController is com.android.library),
-# so the :TeamCode: prefix builds the robot APK without assembling anything extra.
+# TeamCode is the only application module (FtcRobotController, TestFramework and Dashboard are
+# libraries). It has two product flavors: `robot`, the APK that goes to a competition, and
+# `simulated`, which swaps in fake hardware so the app runs on an emulator. Tasks below name the
+# flavor explicitly, because "debug" alone is now ambiguous.
 
 [tasks.check]
 description = "Compile TeamCode - fastest correctness check while editing OpModes"
-run = "./gradlew :TeamCode:compileDebugJavaWithJavac"
+run = "./gradlew :TeamCode:compileRobotDebugJavaWithJavac"
 
 [tasks.build]
-description = "Build the debug APK"
-run = "./gradlew :TeamCode:assembleDebug"
+description = "Build the competition debug APK"
+run = "./gradlew :TeamCode:assembleRobotDebug"
 
 [tasks.install]
 description = "Build and adb install to a connected Robot Controller device"
-run = "./gradlew :TeamCode:installDebug"
+run = "./gradlew :TeamCode:installRobotDebug"
 
 [tasks.test]
-# No test sources exist yet, so this reports NO-SOURCE and passes. It is wired up
-# so the CI gate starts enforcing the moment someone adds a test.
-description = "Run TeamCode unit tests"
-run = "./gradlew :TeamCode:testDebugUnitTest"
+description = "Run TeamCode's unit tests, headless simulated ones included"
+run = "./gradlew :TeamCode:testSimulatedDebugUnitTest"
+
+# Runs the real Robot Controller app against fake hardware on whatever device adb is pointing at -
+# in practice an emulator. Create one first (once):
+#   sdkmanager "emulator" "system-images;android-30;google_apis;arm64-v8a"
+#   avdmanager create avd -n ftc-sim-camera -k "system-images;android-30;google_apis;arm64-v8a"
+#
+# Then point the AVD's back camera at a host webcam, by editing
+# ~/.android/avd/ftc-sim-camera.avd/config.ini:
+#   hw.camera.back=webcam0     # `emulator -webcam-list` names the host's cameras
+#
+# The simulated camera renders its own frames, so any AVD works. A `google_apis` image with a host
+# webcam is only needed to point a physical camera at the app; on macOS the host also has to allow
+# camera access to whatever launched the emulator, and until it does the guest streams black frames.
+#
+#   emulator -avd ftc-sim-camera
+[tasks.simulator]
+description = "Install and launch the simulated Robot Controller on a running emulator"
+run = """
+./gradlew :TeamCode:installSimulatedDebug
+pkg=com.qualcomm.ftcrobotcontroller.simulated
+for permission in CAMERA READ_EXTERNAL_STORAGE WRITE_EXTERNAL_STORAGE ACCESS_COARSE_LOCATION ACCESS_FINE_LOCATION READ_PHONE_STATE; do
+  adb shell pm grant "$pkg" "android.permission.$permission" || true
+done
+adb shell am start -n "$pkg/org.ngicollective.ftcsim.app.SimulatedPermissionValidatorWrapper"
+"""
+
+# Needs a running emulator: the SDK's own robot start and event loop, which no plain-JVM test has.
+[tasks.test-acceptance]
+description = "Prove the SDK's own robot start and event loop drive the simulated camera"
+run = """
+./gradlew :TeamCode:connectedSimulatedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.firstinspires.ftc.teamcode.simulated.RealEventLoopAcceptanceTest
+"""
+
+# The Driver Hub in a browser, from the ftc-sim plugin: one JVM serving the page and the simulation
+# on one port. Flags go through --args, e.g. mise run dashboard --args="--scenario tipping-hive".
+[tasks.dashboard]
+description = "Serve the local Driver Hub against TeamCode's OpModes (http://localhost:8765)"
+run = "./gradlew :TeamCode:dashboard"
 
 [tasks.ci]
 description = "Run all tests necessary to pass CI"
@@ -40,7 +78,7 @@ depends = ["lint", "test"]
 
 [tasks.lint]
 description = "Run Android lint on TeamCode"
-run = "./gradlew :TeamCode:lintDebug"
+run = "./gradlew :TeamCode:lintRobotDebug"
 
 [tasks.clean]
 description = "Delete build outputs"
