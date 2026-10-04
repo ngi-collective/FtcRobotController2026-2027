@@ -1,7 +1,7 @@
-// The simulator: flavours, test setup, staged config and the dashboard task. See
-// build-logic/src/main/java/org/ngicollective/ftcsim/gradle/FtcSimPlugin.java.
+// The simulator: flavours, test setup, staged config and the dashboard task.
+// https://github.com/ngi-collective/ftc-sim
 plugins {
-    id 'org.ngi-collective.ftc-sim'
+    id 'org.ngi-collective.ftc-sim' version '12.0.1'
 }
 
 apply plugin: 'com.android.application'
@@ -31,7 +31,9 @@ android {
 }
 
 ftcSim {
+    version = '12.0.1'
     season = 'biobuzz'
+    seasonVersion = '1.0.0'
 }
 
 dependencies {

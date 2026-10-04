@@ -9,7 +9,6 @@ java = "temurin-21"
 # build-tools installed underneath it live in the versioned install directory.
 # Bumping this version yields an empty SDK until `mise run setup-sdk` reruns.
 android-sdk = "22.0"
-bun = "latest"
 
 # Tasks run inside the mise env, so JAVA_HOME and ANDROID_HOME are already set and
 # no `mise exec --` prefix is needed. Extra flags pass through: `mise run build --info`.
@@ -32,8 +31,8 @@ description = "Build and adb install to a connected Robot Controller device"
 run = "./gradlew :TeamCode:installRobotDebug"
 
 [tasks.test]
-description = "Run unit tests for TeamCode, the test framework, the dashboard and the camera stream"
-run = "./gradlew :TeamCode:testSimulatedDebugUnitTest :TestFramework:testDebugUnitTest :Season-BioBuzz:testDebugUnitTest :SimulatedApp:testDebugUnitTest :Dashboard:testDebugUnitTest :CameraStream:test :build-logic:test"
+description = "Run TeamCode's unit tests, headless simulated ones included"
+run = "./gradlew :TeamCode:testSimulatedDebugUnitTest"
 
 # Runs the real Robot Controller app against fake hardware on whatever device adb is pointing at -
 # in practice an emulator. Create one first (once):
@@ -44,13 +43,9 @@ run = "./gradlew :TeamCode:testSimulatedDebugUnitTest :TestFramework:testDebugUn
 # ~/.android/avd/ftc-sim-camera.avd/config.ini:
 #   hw.camera.back=webcam0     # `emulator -webcam-list` names the host's cameras
 #
-# The image must be `google_apis`, not `default`: the AOSP images ship no camera HAL at all, so
-# their camera device list is empty and `WebcamFrameSource` has nothing to open. This AVD is only
-# needed for the physical-camera oracle; the simulated camera renders its own frames and works on
-# any AVD. Vision also needs
-# the host OS to allow camera access to whatever launched the emulator - on macOS that is a
-# one-time prompt attributed to the terminal or IDE, and until it is granted the guest streams
-# black frames rather than failing.
+# The simulated camera renders its own frames, so any AVD works. A `google_apis` image with a host
+# webcam is only needed to point a physical camera at the app; on macOS the host also has to allow
+# camera access to whatever launched the emulator, and until it does the guest streams black frames.
 #
 #   emulator -avd ftc-sim-camera
 [tasks.simulator]
@@ -64,48 +59,17 @@ done
 adb shell am start -n "$pkg/org.ngicollective.ftcsim.app.SimulatedPermissionValidatorWrapper"
 """
 
-# Vision runs on the plain JVM now, so the two acceptance tests that exercise the SDK's vision
-# stack are part of `mise run test` and of CI. See docs/adr/0007-vision-runs-on-the-plain-jvm.md.
-# What is left here needs an emulator for a reason no native library can fix: a real robot start
-# and a real event loop, and a physical camera behind the FrameSource seam.
-[tasks.test-vision]
-description = "Run the vision tests that still need a running emulator"
-run = """
-mise run test-acceptance
-./gradlew :TestFramework:connectedDebugAndroidTest
-"""
-
+# Needs a running emulator: the SDK's own robot start and event loop, which no plain-JVM test has.
 [tasks.test-acceptance]
 description = "Prove the SDK's own robot start and event loop drive the simulated camera"
 run = """
 ./gradlew :TeamCode:connectedSimulatedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.firstinspires.ftc.teamcode.simulated.RealEventLoopAcceptanceTest
 """
 
-# Rebuilt from source rather than downloaded, and pinned; the script does nothing when its
-# output is current. `mise run test` depends on this through Gradle, so it is rarely run by hand
-# -- it is here to name the thing and to give CI something to cache.
-[tasks.build-vision-natives]
-description = "Build the desktop AprilTag and stub native libraries into build/vision-natives"
-run = "./gradlew buildVisionNatives"
-
-# The dashboard is one JVM that serves the built UI and the simulation socket on the same port
-# (DashboardFront). It used to be two processes, a JVM and a Vite server, and the obvious failure
-# happened: the UI can only reach the socket through its own origin, so a JVM started on a
-# different port left the page talking to whatever else was listening. tools/dashboard.sh
-# decides the port once.
-#
-# The UI is built and served in production mode, because React's development build costs half the
-# main thread on this page (see docs/agents/dashboard-probes.md). `--dev` adds Vite with hot
-# reload for anyone editing the UI itself.
+# The Driver Hub in a browser, from the ftc-sim plugin: one JVM serving the page and the simulation
+# on one port. Flags go through --args, e.g. mise run dashboard --args="--scenario tipping-hive".
 [tasks.dashboard]
-description = "Serve the local Driver Hub, UI and simulation on one port (http://localhost:8765)"
-run = "tools/dashboard.sh"
-
-# The same JVM without the script, for scripts and agents driving the socket directly: flags go
-# straight to DashboardMain, so --port is free here. It serves the page too, on the same port, but
-# a person wants `mise run dashboard`.
-[tasks.dashboard-headless]
-description = "Serve the simulation socket from Gradle directly, flags via --args (ws://localhost:8765)"
+description = "Serve the local Driver Hub against TeamCode's OpModes (http://localhost:8765)"
 run = "./gradlew :TeamCode:dashboard"
 
 [tasks.ci]

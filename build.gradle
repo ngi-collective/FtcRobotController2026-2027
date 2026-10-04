@@ -15,10 +15,6 @@ plugins {
     // Note for FTC Teams: Do not modify this yourself.
     id 'com.android.application' version '8.13.2' apply false
     id 'com.android.library' version '8.13.2' apply false
-
-    // Publishing to the Central Portal; Sonatype ships no Gradle plugin of its own. See
-    // gradle/publish.gradle and docs/adr/0009-publishing-ftc-sim.md.
-    id 'com.vanniktech.maven.publish' version '0.37.0' apply false
 }
 
 // This is now required because aapt2 has to be downloaded from the
@@ -33,95 +29,3 @@ allprojects {
 repositories {
     mavenCentral()
 }
-
-// The native libraries a plain JVM needs before it can run a vision OpMode, in
-// build/vision-natives. The simulated unit test tasks depend on buildVisionNatives, so
-// `mise run test` needs no separate step and neither does CI.
-//
-// Two ways to fill that directory. A prebuilt jar for this host, if there is one, is unpacked: no
-// compiler, no network. Otherwise tools/build-vision-natives.sh compiles from pinned sources,
-// which is cheap to re-run because it stamps its output. The jar is the one
-// packageVisionNatives makes and .github/workflows/vision-natives.yml builds for each platform;
-// point at it with -PvisionNativesJar=<path>, or drop it in libs/vision-natives/.
-//
-// The JVM reads java.library.path once, at startup, and the SDK loads these with
-// System.loadLibrary, which only searches that path. So they have to be on disk before the test
-// JVM starts; extracting them from the classpath at runtime cannot work.
-def visionNativesClassifier = {
-    String os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
-    String arch = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
-    String osPart = os.contains('mac') ? 'osx' : os.contains('win') ? 'windows' : 'linux'
-    String archPart = (arch == 'aarch64' || arch == 'arm64') ? 'aarch64' : 'x86_64'
-    return "${osPart}-${archPart}"
-}()
-def visionNativesJar = providers.gradleProperty('visionNativesJar')
-        .map { file(it) }
-        .orElse(provider { file("${rootDir}/libs/vision-natives/vision-natives-${visionNativesClassifier}.jar") })
-        .get()
-
-tasks.register('compileVisionNatives', Exec) {
-    group = 'ftc'
-    description = 'Compile the desktop AprilTag and stub native libraries into build/vision-natives'
-    commandLine 'bash', "${rootDir}/tools/build-vision-natives.sh"
-
-    inputs.file("${rootDir}/tools/build-vision-natives.sh")
-    inputs.dir("${rootDir}/tools/vision-natives")
-    outputs.dir(layout.buildDirectory.dir('vision-natives'))
-}
-
-tasks.register('unpackVisionNatives', Sync) {
-    group = 'ftc'
-    description = "Unpack the prebuilt ${visionNativesClassifier} natives into build/vision-natives"
-    from(zipTree(visionNativesJar)) {
-        include "natives/${visionNativesClassifier}/*"
-        eachFile { it.path = it.name }
-        includeEmptyDirs = false
-    }
-    into layout.buildDirectory.dir('vision-natives')
-}
-
-tasks.register('buildVisionNatives') {
-    group = 'ftc'
-    description = 'Provide the desktop vision natives in build/vision-natives, prebuilt or compiled'
-    dependsOn(visionNativesJar.isFile() ? 'unpackVisionNatives' : 'compileVisionNatives')
-}
-
-// The jar that unpackVisionNatives reads, for this host: what CI builds once per platform.
-tasks.register('packageVisionNatives', Jar) {
-    group = 'ftc'
-    description = "Package build/vision-natives as vision-natives-${visionNativesClassifier}.jar"
-    dependsOn 'compileVisionNatives'
-    from(layout.buildDirectory.dir('vision-natives')) {
-        include '*.dylib', '*.so', '*.dll'
-        into "natives/${visionNativesClassifier}"
-    }
-    archiveFileName = "vision-natives-${visionNativesClassifier}.jar"
-    destinationDirectory = layout.buildDirectory.dir('vision-natives-dist')
-}
-
-// The Driver Hub UI, built and staged under dashboard-ui/ so the dashboard JVM can serve it from
-// its classpath on the same port as the simulation socket. Needs bun, which mise supplies; Gradle
-// skips both steps while the UI sources are unchanged.
-def dashboardUi = "${rootDir}/driver-hub-dashboard"
-tasks.register('buildDashboardUiBundle', Exec) {
-    group = 'ftc'
-    description = 'Build the Driver Hub UI into driver-hub-dashboard/dist'
-    workingDir dashboardUi
-    commandLine 'bash', '-c', 'bun install --silent && bun run build'
-
-    inputs.dir("${dashboardUi}/src")
-    inputs.files("${dashboardUi}/index.html", "${dashboardUi}/package.json",
-            "${dashboardUi}/bun.lock", "${dashboardUi}/vite.config.ts",
-            "${dashboardUi}/tsconfig.json")
-    outputs.dir("${dashboardUi}/dist")
-}
-
-tasks.register('buildDashboardUi', Sync) {
-    group = 'ftc'
-    description = 'Stage the built Driver Hub UI into build/dashboard-ui as classpath resources'
-    dependsOn 'buildDashboardUiBundle'
-    from "${dashboardUi}/dist"
-    into layout.buildDirectory.dir('dashboard-ui/dashboard-ui')
-}
-
-

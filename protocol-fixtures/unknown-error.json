@@ -1,7 +1,0 @@
-{
-  "namespace": "nope",
-  "type": "error",
-  "payload": {
-    "message": "unknown message nope/nope"
-  }
-}
