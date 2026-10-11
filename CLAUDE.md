@@ -19,13 +19,14 @@ Two remotes, and the distinction matters:
 
 ```bash
 mise run check       # compile TeamCode - fastest correctness check while editing OpModes
-mise run test        # unit tests: TeamCode + TestFramework + Dashboard
+mise run test        # unit tests: TeamCode + TestFramework + Dashboard, vision included
 mise run build       # competition debug APK
 mise run install     # build + adb install to a connected Robot Controller device
 mise run simulator   # install + launch the simulated app on a running emulator
-mise run test-vision # vision tests against a running emulator's camera (not in CI)
+mise run test-vision # the two tests that still need an emulator: event loop, physical camera
 mise run dashboard   # local Driver Hub: simulation + browser UI (http://localhost:5183)
 mise run dashboard --scenario tipping-hive   # the same, with a field arrangement loaded
+mise run dashboard --dev                     # ...served by Vite with hot reload, for UI work
 mise run dashboard-headless  # the simulation socket alone, for scripts (ws://localhost:8765)
 mise run dashboard-headless --args="--port 8775 --camera-port 8776"  # ...on spare ports
 mise run lint
@@ -67,13 +68,20 @@ physical velocity, hands the four speeds to the chassis before the world steps, 
 resulting heading to the IMU after. See `docs/adr/0003-the-world-owns-the-robots-pose.md`.
 `mise run dashboard` streams the pose at 50 Hz and the 3D view drives the robot from it.
 
-**The dashboard is one command, on one port.** `tools/dashboard.sh` starts the JVM and the Vite
-dev server together and decides the port once; the page connects to its own origin at `/ws` and
-Vite proxies that to the simulation, so the browser never names a port and the two halves cannot
+**The dashboard is one command, on one port.** `tools/dashboard.sh` builds the UI, serves it and
+starts the JVM, deciding the port once; the page connects to its own origin at `/ws` and Vite
+proxies that to the simulation, so the browser never names a port and the two halves cannot
 disagree. Move both with `DASHBOARD_PORT=9000 mise run dashboard` — a bare `--port` is refused,
 because a port only the JVM knows about is exactly the bug this replaced: the UI silently
 connected to whatever else was on 8765, green indicator and all. Scripts that drive the socket
 directly want `mise run dashboard-headless`, which has no UI to point anywhere.
+
+**It serves a production build**, and `--dev` is the opt-out for anyone editing the UI. React's
+development build emits a `performance.measure` per component per commit and this page commits at
+20 Hz: profiled at 6× CPU throttle, the dev build spent 28% of the main thread in `clearMeasures`
+and 20% in `jsxDEV`, ran at 27–30 fps and stalled for 100 ms at a time, where the production
+build of the same commit held 60 fps with a 16.7 ms p95. That is the single biggest thing between
+a driver and a smooth field view, and it is a build flag, not a scene.
 
 **The simulated flavour starts its own robot**, because the SDK's robot start cannot finish on an
 emulator: it waits for a Wi-Fi Direct network that is not there and gives up with
@@ -139,6 +147,15 @@ replaces `FtcRobotControllerService.setupRobot`, which is what waits for the net
   a robot can hit. The CELL face carrying an AprilTag Cluster is **collided with but not drawn**:
   a panel coplanar with the sticker would take turns painting over it in a renderer that sorts
   whole polygons by depth, and the tags would vanish from some viewpoints only.
+- **A CELL is a pentagon with clear skins, and only the collider is a box.** `am-5866 Goal Rib` is
+  a plate, two per CELL 11.9 in apart along its depth, whose outline is a house: a flat base, two
+  sides up to a shoulder, then two 34° edges meeting over the centreline. It is drawn as the five
+  bars of that outline in the alliance colour — a filled plate across the mouth would hide the
+  balls, the same reason a FLOWER's tube is open — and the panels between the ribs are
+  polycarbonate, so they carry a `Solid.translucent` alpha that the browser and the camera both
+  honour. What a ball bounces off is still the manual's 20 × 14 × 12 in box; the two differ only
+  in the corners above the shoulder, where nothing ever rests. Drawing the collider instead is
+  what made a CELL read as a crate.
 - **A HIVE really tips, on a real hinge, and nothing decides that it has.** The body is hinged on
   the measured pivot axis with hard stops at the two stable states and one explicit bi-stable
   torque; what turns it is the weight of the balls in the raised CELL and the impact of the next
@@ -262,12 +279,28 @@ field. OpMode code is unmodified — see `docs/adr/0001-opmodes-run-unadulterate
 - `WebcamFrameSource` keeps a **physical** camera behind the same `FrameSource` seam, as an
   oracle for "is the detector broken, or is my renderer?". It needs a `google_apis` AVD with
   `hw.camera.back=webcam0`; see `mise.toml`.
-- The acceptance tests are instrumented and deliberately outside CI: `mise run test-acceptance`
-  runs all three, one Gradle invocation each. `RealEventLoopAcceptanceTest` proves the SDK's own
-  lifecycle drives the camera; `SyntheticCameraAcceptanceTest` proves the detections are right by
-  reading an unmodified OpMode's telemetry; `AimedLauncherAcceptanceTest` runs the whole season
-  loop. They cannot share a process: each builds a LiveView portal, and a second portal fails with
-  "Viewport container specified by user is not empty!".
+- **Vision runs on a plain JVM, and therefore in CI.** `SyntheticCameraAcceptanceTest` (detections
+  are right, read off an unmodified OpMode's telemetry) and `AimedLauncherAcceptanceTest` (the
+  whole season loop) are ordinary `mise run test` tests, about 13 s for the pair against 142 s of
+  emulator invocations. `tools/build-vision-natives.sh` rebuilds AprilTag from OpenFTC's sources
+  and stubs `libRobotCore`/`libEasyOpenCV`; OpenCV comes from `org.openpnp` through
+  `VisionNatives.ensureLoaded()`; Robolectric supplies the Android framework, and `PlainJvmVision`
+  the four things it does not — an Activity, the LiveView container, an `OpModeManagerImpl` and
+  a pump for the paused main looper. **Call `PlainJvmVision.pump()` once per control cycle** or a
+  camera that opens asynchronously never finishes opening. See
+  `docs/adr/0007-vision-runs-on-the-plain-jvm.md`.
+- **The Dashboard runs vision too, and that is why it starts through a JUnit runner.** A
+  Robolectric sandbox comes from one, so `mise run dashboard` starts `DashboardLauncher`, which
+  runs `DashboardHost` — a `@Test` method that serves until the process is killed and pumps the
+  main looper every 5 ms. It is excluded from the test task by name; unexclude it and CI waits
+  forever. `DashboardMain.start()` is the non-blocking half that makes this possible, and
+  `DashboardMain.main()` still exists for a session with no vision in it.
+- **Two things still need an emulator**, and no native library will change that:
+  `RealEventLoopAcceptanceTest`, which proves the SDK's own robot start and event loop drive the
+  camera, and `WebcamFrameSourceTest`, which needs a physical camera. `mise run test-vision` is
+  those two. Each still wants its own Gradle invocation: a second LiveView portal in one process
+  fails with "Viewport container specified by user is not empty!", which on the plain JVM is
+  avoided instead by Robolectric giving each test class its own sandbox.
 
 ## Aiming, and shooting what you aimed at
 
@@ -279,8 +312,8 @@ plain-JVM testable. See `docs/adr/0006-a-cluster-detection-is-an-aim-point.md`.
 **Auto: sweep and shoot**, drag the robot onto the start square the INIT telemetry names
 (`x -0.55, y -1.43, heading 90`), and press START. Nine seconds later the score reads
 `RED 20 (1 TIP)`. `SweepAndShootAuto` is the routine to read first: five timed steps, no vision,
-no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit — which the vision
-loop's equivalent cannot do, since it needs an emulator.
+no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit — as, since
+`docs/adr/0007-vision-runs-on-the-plain-jvm.md`, does the vision loop's equivalent.
 
 - **An AUTO aims off the field drawing, not off a camera.** It starts on a known square facing a
   known direction, so the range is arithmetic before the robot has moved and with no tag in view.
@@ -347,4 +380,7 @@ Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root (not yet crea
 
 Dashboard slow, choppy, or suspected of leaking: measure with `driver-hub-dashboard/src/probe.ts`
 (open the UI with `?probe`) and `tools/rss-curve.mjs` before theorising. A JS heap counter and a
-DevTools profile both answer this question wrongly. See `docs/agents/dashboard-probes.md`.
+DevTools profile both answer this question wrongly. See `docs/agents/dashboard-probes.md`, which
+also carries the 3D view's measured budget — draw calls, GPU milliseconds per frame, and what
+each of resolution, shadows and materials actually costs — plus the levers that were tried and
+left alone.

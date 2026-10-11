@@ -4,15 +4,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import android.util.Log;
-
-import androidx.test.ext.junit.runners.AndroidJUnit4;
-
 import org.firstinspires.ftc.teamcode.AimedLauncherTeleOp;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 import org.ngicollective.testframework.camera.GameElement;
 import org.ngicollective.testframework.camera.SimulatedScene;
 import org.ngicollective.testframework.camera.TagCluster;
@@ -29,8 +25,6 @@ import org.ngicollective.testframework.sim.Pose2d;
 import org.ngicollective.testframework.sim.RobotConfig;
 import org.ngicollective.testframework.sim.SimConfigFiles;
 import org.ngicollective.testframework.sim.VolumeConfig;
-import org.opencv.android.OpenCVLoader;
-import org.openftc.easyopencv.SyntheticCameras;
 
 import java.util.List;
 import java.util.regex.Matcher;
@@ -45,15 +39,16 @@ import java.util.regex.Pattern;
  * through its gamepad; the flywheel has inertia and the HIVE is on a hinge. Nothing here tells the
  * world that a shot happened or that a HIVE should tip.</p>
  *
- * <p>Instrumented and outside CI for the same reason as its siblings &mdash; OpenCV, apriltag and
- * EasyOpenCV ship Android-only natives &mdash; and in its own Gradle invocation, because a second
- * {@code VisionPortal} with LiveView in one process fails on the viewport it cannot get back. See
- * {@code mise run test-acceptance}.</p>
+ * <p>Runs on the plain JVM execution target, and so in CI, which it could not do while the SDK's
+ * vision natives were the only ones available: see {@link PlainJvmVision} and
+ * {@code docs/adr/0007-vision-runs-on-the-plain-jvm.md}. Each test class gets its own Robolectric
+ * sandbox, which is also what keeps its {@code VisionPortal} apart from the one
+ * {@code SyntheticCameraAcceptanceTest} builds &mdash; two LiveView portals in one classloader
+ * fail on the viewport neither can get back.</p>
  */
-@RunWith(AndroidJUnit4.class)
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk = 28)
 public class AimedLauncherAcceptanceTest {
-
-    private static final String TAG = "AimedLauncherTest";
 
     /** "target : RED AUDIENCE  100% of the cluster", as the OpMode prints it. */
     private static final Pattern TARGET = Pattern.compile("target\\s*:\\s*(\\S+ \\S+)\\s+(\\d+)%");
@@ -116,20 +111,9 @@ public class AimedLauncherAcceptanceTest {
                 + GameElement.POLLEN_DIAMETER_METRES / 2.0;
     }
 
-    @BeforeClass
-    public static void startTheRobot() throws Exception {
-        assertTrue("OpenCV native library failed to load", OpenCVLoader.initDebug());
-        RobotUnderTest.start();
-    }
-
-    @AfterClass
-    public static void stopTheRobot() {
-        RobotUnderTest.stop();
-    }
-
     @Test
     public void theRobotRangesOffAClusterAndTipsTheHiveItWasAimingAt() throws Exception {
-        SyntheticCameras.install();
+        PlainJvmVision.start();
 
         RobotConfig config = SimConfigFiles.robot("verity");
         SimulatedScene scene = SimConfigFiles.scenario("aimed-shot").scene();
@@ -153,7 +137,7 @@ public class AimedLauncherAcceptanceTest {
         // turning onto the CELL and spinning up on its own.
         harness.gamepad1().left_bumper = true;
         List<String> aimed = advanceUntil(harness, 6.0, frame -> matched(frame, STATE, "READY"));
-        Log.i(TAG, "aimed: " + aimed);
+        System.out.println("aimed: " + aimed);
 
         // What the camera worked out, against what the scene was built from. This is the whole
         // chain in one assertion: the renderer's geometry, the detector's solve, the camera's
@@ -201,7 +185,7 @@ public class AimedLauncherAcceptanceTest {
                         + " the mouth but what arrived in the CELL was not enough to move it, or it"
                         + " did not arrive at all. Elements: " + hardware.physics().elements(),
                 tipped(hardware));
-        Log.i(TAG, "tipped after " + bursts + " nudges: " + hardware.physics().pivots());
+        System.out.println("tipped after " + bursts + " nudges: " + hardware.physics().pivots());
 
         // And the payoff: a HIVE that has tipped faces the other way, so the robot that just
         // scored is looking at the backs of two plates and has no target at all. This is the
@@ -209,7 +193,7 @@ public class AimedLauncherAcceptanceTest {
         // the other one, with the other four ids, on the far side of the field.
         List<String> lost = advanceUntil(harness, 4.0,
                 frame -> matched(frame, TARGET_LOST, "no RED CELL in view"));
-        Log.i(TAG, "after the tip: " + lost);
+        System.out.println("after the tip: " + lost);
         assertTrue("the tipped HIVE's tags face away, so there should be nothing to aim at: "
                         + lost,
                 matched(lost, TARGET_LOST, "no RED CELL in view"));
@@ -220,7 +204,7 @@ public class AimedLauncherAcceptanceTest {
                 Math.toRadians(-90.0)));
         List<String> again = advanceUntil(harness, 6.0,
                 frame -> matched(frame, TARGET, BioBuzzField.RED_SCORING));
-        Log.i(TAG, "from the scoring side: " + again);
+        System.out.println("from the scoring side: " + again);
         assertTrue("the other CELL should be the raised one now: " + again,
                 matched(again, TARGET, BioBuzzField.RED_SCORING));
 
@@ -280,6 +264,7 @@ public class AimedLauncherAcceptanceTest {
         List<String> last = harness.lastTelemetry();
         for (int tick = 0; tick < seconds / TICK_SECONDS; tick++) {
             harness.advance(TICK_SECONDS);
+            PlainJvmVision.pump();
             Thread.sleep(8);
             last = harness.lastTelemetry();
             if (wanted.test(last)) {

@@ -54,7 +54,8 @@ _Avoid_: the framework, sim library
 ### Running OpModes
 
 **Execution target**:
-A runtime an OpMode can be run in. There are two: plain JVM and the Android emulator.
+A runtime an OpMode can be run in. There are two: plain JVM and the Android emulator. Both can
+run a vision OpMode; only the emulator can perform a robot start.
 _Avoid_: environment, platform, backend
 
 **OpMode**:
