@@ -1,23 +1,25 @@
 package org.firstinspires.ftc.teamcode.simulated;
 
-import org.ngicollective.testframework.behavior.ImuBehaviors;
-import org.ngicollective.testframework.behavior.MotorBehaviors;
-import org.ngicollective.testframework.camera.CameraIntrinsics;
-import org.ngicollective.testframework.camera.SceneFrameSource;
-import org.ngicollective.testframework.camera.SimulatedCamera;
-import org.ngicollective.testframework.camera.SimulatedScene;
-import org.ngicollective.testframework.hardware.FakeHardwareMap;
-import org.ngicollective.testframework.hardware.SimulatedRobot;
-import org.ngicollective.testframework.season.BioBuzzField;
-import org.ngicollective.testframework.sim.CameraConfig;
-import org.ngicollective.testframework.sim.FieldConfig;
-import org.ngicollective.testframework.sim.LauncherConfig;
-import org.ngicollective.testframework.sim.MotorConfig;
-import org.ngicollective.testframework.sim.Pose2d;
-import org.ngicollective.testframework.sim.RobotConfig;
-import org.ngicollective.testframework.sim.SensorConfig;
-import org.ngicollective.testframework.sim.ServoConfig;
-import org.ngicollective.testframework.sim.SimConfigFiles;
+import org.ngicollective.ftcsim.behavior.ImuBehaviors;
+import org.ngicollective.ftcsim.behavior.MotorBehaviors;
+import org.ngicollective.ftcsim.camera.CameraIntrinsics;
+import org.ngicollective.ftcsim.camera.SceneFrameSource;
+import org.ngicollective.ftcsim.camera.SimulatedCamera;
+import org.ngicollective.ftcsim.camera.SimulatedScene;
+import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
+import org.ngicollective.ftcsim.hardware.SimulatedRobot;
+import org.ngicollective.ftcsim.season.BioBuzz;
+import org.ngicollective.ftcsim.season.BioBuzzField;
+import org.ngicollective.ftcsim.sim.CameraConfig;
+import org.ngicollective.ftcsim.sim.FieldConfig;
+import org.ngicollective.ftcsim.sim.LauncherConfig;
+import org.ngicollective.ftcsim.sim.MotorConfig;
+import org.ngicollective.ftcsim.sim.Pose2d;
+import org.ngicollective.ftcsim.sim.RobotConfig;
+import org.ngicollective.ftcsim.sim.Season;
+import org.ngicollective.ftcsim.sim.SensorConfig;
+import org.ngicollective.ftcsim.sim.ServoConfig;
+import org.ngicollective.ftcsim.sim.SimConfigFiles;
 
 import java.nio.file.Path;
 import java.util.Map;
@@ -113,7 +115,7 @@ public class VerityRobot implements SimulatedRobot {
      * <p>The official field is the default because it needs no file to be right. A scenario is
      * for the arrangements that are a choice &mdash; a HIVE tipped the other way, balls left where
      * they broke autonomous last weekend &mdash; and
-     * {@code SimConfigFiles.scenario(name).scene()} is where one comes from.</p>
+     * {@code BioBuzzScenario.named(name).scene()} is where one comes from.</p>
      */
     public VerityRobot(RobotConfig config, FieldConfig field, SimulatedScene scene) {
         this(fixed(new Snapshot(config, field, scene)), null);
@@ -250,6 +252,12 @@ public class VerityRobot implements SimulatedRobot {
     /** The field this robot is simulated on. */
     public FieldConfig field() {
         return current.field;
+    }
+
+    /** Verity is built for BioBuzz: its scenarios stage HIVEs and its field scores CELLs. */
+    @Override
+    public Season season() {
+        return BioBuzz.SEASON;
     }
 
     /**

@@ -11,11 +11,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.ngicollective.testframework.camera.Pose3d;
-import org.ngicollective.testframework.camera.SceneFrameSource;
-import org.ngicollective.testframework.dashboard.LocalDashboardBackend;
-import org.ngicollective.testframework.dashboard.OpModeEntry;
-import org.ngicollective.testframework.dashboard.protocol.OpModeInfo;
+import org.ngicollective.ftcsim.camera.Pose3d;
+import org.ngicollective.ftcsim.camera.SceneFrameSource;
+import org.ngicollective.ftcsim.dashboard.LocalDashboardBackend;
+import org.ngicollective.ftcsim.dashboard.OpModeEntry;
+import org.ngicollective.ftcsim.dashboard.protocol.OpModeInfo;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

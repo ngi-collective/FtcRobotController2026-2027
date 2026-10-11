@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
 import org.junit.jupiter.api.Test;
-import org.ngicollective.testframework.hardware.FakeHardwareMap;
-import org.ngicollective.testframework.sim.LauncherConfig;
-import org.ngicollective.testframework.sim.RobotConfig;
-import org.ngicollective.testframework.sim.SimConfigFiles;
+import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
+import org.ngicollective.ftcsim.sim.LauncherConfig;
+import org.ngicollective.ftcsim.sim.RobotConfig;
+import org.ngicollective.ftcsim.sim.SimConfigFiles;
 
 /**
  * That the robot's launcher, as configured, behaves like something with a flywheel on it.

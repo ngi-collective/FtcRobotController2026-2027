@@ -2,17 +2,18 @@ package org.firstinspires.ftc.teamcode;
 
 import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
 import org.junit.jupiter.api.Test;
-import org.ngicollective.testframework.camera.CameraIntrinsics;
-import org.ngicollective.testframework.camera.Pose3d;
-import org.ngicollective.testframework.camera.SceneFrameSource;
-import org.ngicollective.testframework.camera.SimulatedCamera;
-import org.ngicollective.testframework.camera.SyntheticFrame;
-import org.ngicollective.testframework.camera.Vec3;
-import org.ngicollective.testframework.hardware.FakeHardwareMap;
-import org.ngicollective.testframework.hardware.FakeWebcam;
-import org.ngicollective.testframework.sim.FieldConfig;
-import org.ngicollective.testframework.sim.Pose2d;
-import org.ngicollective.testframework.sim.SimConfigFiles;
+import org.ngicollective.ftcsim.camera.CameraIntrinsics;
+import org.ngicollective.ftcsim.camera.Pose3d;
+import org.ngicollective.ftcsim.camera.SceneFrameSource;
+import org.ngicollective.ftcsim.camera.SimulatedCamera;
+import org.ngicollective.ftcsim.camera.SyntheticFrame;
+import org.ngicollective.ftcsim.camera.Vec3;
+import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
+import org.ngicollective.ftcsim.hardware.FakeWebcam;
+import org.ngicollective.ftcsim.season.BioBuzzScenario;
+import org.ngicollective.ftcsim.sim.FieldConfig;
+import org.ngicollective.ftcsim.sim.Pose2d;
+import org.ngicollective.ftcsim.sim.SimConfigFiles;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -29,7 +30,7 @@ class SimulatedCameraWiringTest {
 
     private static FakeHardwareMap robotLookingAt(String scenario) {
         return new VerityRobot(SimConfigFiles.robot("verity"), FieldConfig.standard(),
-                SimConfigFiles.scenario(scenario).scene()).create();
+                BioBuzzScenario.named(scenario).scene()).create();
     }
 
     @Test
@@ -60,7 +61,7 @@ class SimulatedCameraWiringTest {
                 CameraIntrinsics.approximate(640, 480),
                 Pose3d.ofDegrees(new Vec3(0.16, 0.0, 0.25), 0.0, -10.0, 0.0));
         SceneFrameSource source = new SceneFrameSource(
-                SimConfigFiles.scenario("practice-balls").scene(), ballCamera,
+                BioBuzzScenario.named("practice-balls").scene(), ballCamera,
                 new SceneFrameSource.PoseSource() {
                     @Override
                     public Pose2d pose() {

@@ -7,24 +7,27 @@ import static org.junit.Assert.assertTrue;
 import org.firstinspires.ftc.teamcode.AimedLauncherTeleOp;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.ngicollective.ftcsim.app.PlainJvmVision;
+import org.ngicollective.ftcsim.camera.GameElement;
+import org.ngicollective.ftcsim.camera.SimulatedScene;
+import org.ngicollective.ftcsim.camera.TagCluster;
+import org.ngicollective.ftcsim.camera.Vec3;
+import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
+import org.ngicollective.ftcsim.harness.LinearOpModeHarness;
+import org.ngicollective.ftcsim.harness.OpModeHarness;
+import org.ngicollective.ftcsim.physics.FieldPhysics;
+import org.ngicollective.ftcsim.physics.PivotState;
+import org.ngicollective.ftcsim.season.BioBuzzElements;
+import org.ngicollective.ftcsim.season.BioBuzzField;
+import org.ngicollective.ftcsim.season.BioBuzzHive;
+import org.ngicollective.ftcsim.season.BioBuzzScenario;
+import org.ngicollective.ftcsim.sim.FieldConfig;
+import org.ngicollective.ftcsim.sim.Pose2d;
+import org.ngicollective.ftcsim.sim.RobotConfig;
+import org.ngicollective.ftcsim.sim.SimConfigFiles;
+import org.ngicollective.ftcsim.sim.VolumeConfig;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
-import org.ngicollective.testframework.camera.GameElement;
-import org.ngicollective.testframework.camera.SimulatedScene;
-import org.ngicollective.testframework.camera.TagCluster;
-import org.ngicollective.testframework.camera.Vec3;
-import org.ngicollective.testframework.harness.LinearOpModeHarness;
-import org.ngicollective.testframework.harness.OpModeHarness;
-import org.ngicollective.testframework.hardware.FakeHardwareMap;
-import org.ngicollective.testframework.physics.FieldPhysics;
-import org.ngicollective.testframework.physics.PivotState;
-import org.ngicollective.testframework.season.BioBuzzField;
-import org.ngicollective.testframework.season.BioBuzzHive;
-import org.ngicollective.testframework.sim.FieldConfig;
-import org.ngicollective.testframework.sim.Pose2d;
-import org.ngicollective.testframework.sim.RobotConfig;
-import org.ngicollective.testframework.sim.SimConfigFiles;
-import org.ngicollective.testframework.sim.VolumeConfig;
 
 import java.util.List;
 import java.util.regex.Matcher;
@@ -108,7 +111,7 @@ public class AimedLauncherAcceptanceTest {
     private static double reachMetres(RobotConfig config) {
         VolumeConfig mouth = config.launchers().get("flywheel").mouth();
         return mouth.forwardMetres() + mouth.lengthMetres() / 2.0
-                + GameElement.POLLEN_DIAMETER_METRES / 2.0;
+                + BioBuzzElements.POLLEN_DIAMETER_METRES / 2.0;
     }
 
     @Test
@@ -116,7 +119,7 @@ public class AimedLauncherAcceptanceTest {
         PlainJvmVision.start();
 
         RobotConfig config = SimConfigFiles.robot("verity");
-        SimulatedScene scene = SimConfigFiles.scenario("aimed-shot").scene();
+        SimulatedScene scene = BioBuzzScenario.named("aimed-shot").scene();
         FakeHardwareMap hardware = new VerityRobot(config, FieldConfig.standard(), scene).create();
 
         // The world has to be installed, not merely rendered. A hardware map is built with an

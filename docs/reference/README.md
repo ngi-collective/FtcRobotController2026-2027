@@ -10,8 +10,8 @@ BIOBUZZ-specific must come from the files below.
 
 | File | Bytes | Source | What it is for |
 | --- | --- | --- | --- |
-| `biobuzz-competition-manual.pdf` | 6,948,629 | <https://ftc-resources.firstinspires.org/ftc/game/manual> | Official BIOBUZZ Competition Manual V1, 173 pages. Game rules, ARENA/FIELD specs, AprilTags (§9.9), SCORING ELEMENTS (§9.8). |
-| `biobuzz-competition-manual.html` | 1,373,698 | <https://ftc-resources.firstinspires.org/ftc/archive/2027/game/cm-html> | Same manual, V1, as HTML. **Use this for text search** — see the PDF caveat below. |
+| `biobuzz-competition-manual.pdf` | 6,948,629 | <https://ftc-resources.firstinspires.org/ftc/game/manual> | Official BIOBUZZ Competition Manual V1, 173 pages. Game rules, ARENA/FIELD specs, AprilTags (§9.9), SCORING ELEMENTS (§9.8). **Not committed**: FIRST's document, fetch it from the source. |
+| `biobuzz-competition-manual.html` | 1,373,698 | <https://ftc-resources.firstinspires.org/ftc/archive/2027/game/cm-html> | Same manual, V1, as HTML. **Use this for text search** — see the PDF caveat below. **Not committed**, as above. |
 | `biobuzz-field-cad.step` | 35,206,208 | <https://ftc-resources.firstinspires.org/ftc/field/field-cad-step> | Full FIELD assembly, STEP AP242 (`am-5850 BIOBUZZ 8-10-26`). The only source of numeric AprilTag / FIELD-element coordinates. **Not committed** — see below. |
 
 SHA-256:
