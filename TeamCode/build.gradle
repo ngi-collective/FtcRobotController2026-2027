@@ -1,3 +1,9 @@
+// The simulator: flavours, test setup, staged config and the dashboard task.
+// https://github.com/ngi-collective/ftc-sim
+plugins {
+    id 'org.ngi-collective.ftc-sim' version '12.0.1'
+}
+
 apply plugin: 'com.android.application'
 
 //
@@ -23,66 +29,12 @@ android {
     packagingOptions {
         jniLibs.useLegacyPackaging true
     }
+}
 
-    // Two builds of the same OpModes. `robot` is what goes to a competition; `simulated` swaps the
-    // hardware layer for fakes so the whole app can run on an emulator with no robot attached.
-    flavorDimensions 'target'
-    productFlavors {
-        robot {
-            dimension 'target'
-            isDefault = true
-        }
-        simulated {
-            dimension 'target'
-            // A distinct package so both can sit on one device at once.
-            applicationIdSuffix '.simulated'
-            versionNameSuffix '-simulated'
-        }
-    }
-
-    defaultConfig {
-        // Two of the SDK's four vision natives are stubbed and one is rebuilt from source for the
-        // host, so vision runs on a plain JVM too; see tools/build-vision-natives.sh. What still
-        // needs an emulator is the SDK's own robot start and event loop, which is what
-        // RealEventLoopAcceptanceTest covers.
-        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-    }
-
-    testOptions {
-        unitTests.all {
-            useJUnitPlatform()
-
-            // AprilTagDetectorJNI and EasyOpenCV both load their natives in a static
-            // initializer, so the libraries have to be findable before any test touches them.
-            // OpenCV is not here: org.openpnp extracts its own.
-            systemProperty 'java.library.path',
-                    rootProject.layout.buildDirectory.dir('vision-natives').get().asFile.path
-            dependsOn ':buildVisionNatives'
-
-            // An input as well as a dependency: a rebuilt detector is a different detector, and
-            // a test task that stayed up to date across one would be reporting yesterday's run.
-            inputs.dir(rootProject.layout.buildDirectory.dir('vision-natives'))
-                    .withPropertyName('visionNatives')
-
-            // DashboardHost is a session, not a test: its one method serves until the process
-            // is killed. A test run that picked it up would never finish.
-            exclude '**/DashboardHost.class'
-        }
-
-        // Robolectric reads the merged resource table, which is where the SDK keeps the built-in
-        // camera calibrations that decide whether a tag pose is right or merely present.
-        unitTests.includeAndroidResources = true
-    }
-
-    // The simulated app runs on a device, where there is no repository checkout to read
-    // `robot-config/` out of. Stage those files as Java resources so the same JSON that the
-    // dashboard and the headless tests read off disk is also inside the APK. Nested one level
-    // deep so the resource path matches the on-disk path and SimConfigFiles can try both.
-    sourceSets {
-        simulated {
-            resources.srcDirs += layout.buildDirectory.dir('generated/robotConfig')
-        }
-    }
+ftcSim {
+    version = '12.0.1'
+    season = 'biobuzz'
+    seasonVersion = '1.0.0'
 }
 
 dependencies {
