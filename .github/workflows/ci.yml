@@ -61,5 +61,5 @@ jobs:
           path: TeamCode/build/reports/lint-results-robotDebug.html
           if-no-files-found: warn
 
-      - name: Build APK
-        run: mise run build
+   #   - name: Build APK
+   #     run: mise run build
