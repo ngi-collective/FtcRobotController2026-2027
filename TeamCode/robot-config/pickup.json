@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "name": "Pickup",
+  "chassis": {
+    "widthMetres": 0.38,
+    "lengthMetres": 0.40,
+    "heightMetres": 0.05,
+    "deckHeightMetres": 0.105,
+    "massKilograms": 14.0
+  },
+  "drivetrain": {
+    "type": "mecanum",
+    "wheelRadiusMetres": 0.048,
+    "gearRatio": 1.0,
+    "trackWidthMetres": 0.32,
+    "wheelBaseMetres": 0.29,
+    "strafeEfficiency": 0.8,
+    "gripCoefficient": 0.9
+  },
+  "imu": { "name": "imu" },
+  "camera": {
+    "name": "Webcam 1",
+    "forwardMetres": 0.16,
+    "leftMetres": 0.0,
+    "heightMetres": 0.25,
+    "yawDegrees": 0.0,
+    "pitchDegrees": -10.0,
+    "rollDegrees": 0.0,
+    "framesPerSecond": 30.0
+  },
+  "motors": {
+    "FL": { "role": "frontLeft",  "mirrored": true,  "rpm": 312.0, "ticksPerRevolution": 537.7 },
+    "FR": { "role": "frontRight", "mirrored": false, "rpm": 312.0, "ticksPerRevolution": 537.7 },
+    "BL": { "role": "backLeft",   "mirrored": true,  "rpm": 312.0, "ticksPerRevolution": 537.7 },
+    "BR": { "role": "backRight",  "mirrored": false, "rpm": 312.0, "ticksPerRevolution": 537.7 }
+  },
+  "sensors": {
+    "battery": { "type": "voltage" }
+  },
+  "intake": {
+    "mouth": {
+      "forwardMetres": 0.24,
+      "leftMetres": 0.0,
+      "heightMetres": 0.04,
+      "lengthMetres": 0.08,
+      "widthMetres": 0.24,
+      "tallMetres": 0.10
+    }
+  }
+}

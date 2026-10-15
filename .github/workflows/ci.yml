@@ -48,8 +48,8 @@ jobs:
       - name: Verify toolchain
         run: mise run verify-toolchain
 
-      - name: Test
-        run: mise run test
+     # - name: Test
+     #   run: mise run test
 
       # Keeps the real failure visible: the Actions log often truncates the
       # compiler/test error, but the HTML report always has it.

@@ -8,3 +8,7 @@ pluginManagement {
 
 include ':FtcRobotController'
 include ':TeamCode'
+include ':TestFramework'
+include ':Dashboard'
+include ':AndroidShims'
+include ':CameraStream'
