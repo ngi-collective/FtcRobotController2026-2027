@@ -167,9 +167,20 @@ class IamYouHeadlessTest {
                         + harness.lastTelemetry());
     }
 
+    /**
+     * Presses START and waits for the main loop.
+     *
+     * <p>iamyou zeroes the IMU after START, so a test that turns the chassis before that reset
+     * lands has its turn become NORTH. The loop's own telemetry is the first thing that comes
+     * after the reset.</p>
+     */
     private void launchAndStart() {
         launch();
         harness.pressStart();
+        await(() -> harness.lastTelemetry().stream()
+                        .anyMatch(line -> line.startsWith("Facing (vs start) : ")),
+                () -> "the OpMode never reached its main loop; last telemetry was "
+                        + harness.lastTelemetry());
     }
 
     /**
