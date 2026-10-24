@@ -89,3 +89,6 @@ driver-hub-dashboard/*.tsbuildinfo
 # The numbers we need are extracted into version-controlled config instead.
 # See docs/reference/README.md for the fetch command.
 docs/reference/*.step
+# FIRST's competition manual: fetch it from the URL in docs/reference/README.md.
+docs/reference/*.pdf
+docs/reference/*.html

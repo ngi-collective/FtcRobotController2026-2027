@@ -3,10 +3,10 @@ package org.firstinspires.ftc.teamcode;
 import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.ngicollective.testframework.hardware.FakeHardwareMap;
-import org.ngicollective.testframework.sim.FieldConfig;
-import org.ngicollective.testframework.sim.RobotConfig;
-import org.ngicollective.testframework.sim.SimConfigFiles;
+import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
+import org.ngicollective.ftcsim.sim.FieldConfig;
+import org.ngicollective.ftcsim.sim.RobotConfig;
+import org.ngicollective.ftcsim.sim.SimConfigFiles;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
