@@ -1,13 +1,14 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.robotcore.hardware.DcMotor;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
 import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
 import org.ngicollective.ftcsim.harness.LinearOpModeHarness;
 import org.ngicollective.ftcsim.harness.OpModeHarness;
+import org.ngicollective.ftcsim.sim.Pose2d;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -18,118 +19,133 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>The OpMode is unmodified: it looks its hardware up through {@code hardwareMap}, reads
  * {@code gamepad1}, and pushes telemetry exactly as it does on the field. Everything it touches is
  * simulated by the test framework.</p>
+ *
+ * <p>Driving is asserted on pose, not wheel powers. {@link IamYouLogic} shapes, caps and
+ * friction-boosts every command, so the powers are tuning; where the robot goes is the
+ * behaviour. {@link IamYouLogicTest} owns the numbers.</p>
  */
 class IamYouHeadlessTest {
 
     private static final String[] WHEELS = {"FL", "FR", "BL", "BR"};
+    private static final double TICK = 0.02;
 
     private FakeHardwareMap hardware;
     private LinearOpModeHarness harness;
 
-    @BeforeEach
-    void setUp() {
-        // The same configuration the dashboard drives, so a device rename breaks one place.
-        hardware = new VerityRobot().create();
-        for (String wheel : WHEELS) {
-            // Round numbers keep the encoder assertions below readable.
-            hardware.motor(wheel).state().setMaxTicksPerSecond(1000.0);
-        }
-        harness = OpModeHarness.forLinear(new iamyou(), hardware);
-    }
-
     @AfterEach
     void tearDown() {
-        harness.pressStop();
-        harness.awaitCompletion(2000);
+        if (harness != null) {
+            harness.pressStop();
+            harness.awaitCompletion(2000);
+        }
     }
 
     @Test
-    void initializesTheImuAndTheDriveMotorsBeforeStart() {
-        harness.launch();
-        awaitInitLoop();
+    void initializesTheImuTheDriveMotorsAndTheIntakeBeforeStart() {
+        launch();
 
         assertTrue(hardware.imu("imu").isInitialized(), "the OpMode must initialize the IMU");
         for (String wheel : WHEELS) {
-            assertEquals(com.qualcomm.robotcore.hardware.DcMotor.RunMode.RUN_USING_ENCODER,
-                    hardware.motor(wheel).getMode(), wheel);
-            assertEquals(com.qualcomm.robotcore.hardware.DcMotor.ZeroPowerBehavior.BRAKE,
+            // Plain power on purpose: iamyou reads the encoders for its stop assist but drives
+            // without the hub's velocity PID.
+            assertEquals(DcMotor.RunMode.RUN_WITHOUT_ENCODER, hardware.motor(wheel).getMode(), wheel);
+            assertEquals(DcMotor.ZeroPowerBehavior.BRAKE,
                     hardware.motor(wheel).getZeroPowerBehavior(), wheel);
         }
-        assertTrue(harness.lastTelemetry().contains("INIT Direction : NORTH"),
-                "telemetry was " + harness.lastTelemetry());
+        assertEquals(DcMotor.RunMode.RUN_WITHOUT_ENCODER,
+                hardware.motor(IntakeHardware.NAME).getMode());
+        assertEquals(DcMotor.ZeroPowerBehavior.BRAKE,
+                hardware.motor(IntakeHardware.NAME).getZeroPowerBehavior());
+        // A line, not the whole frame: the position is followed by the D-pad legend.
+        await(() -> harness.lastTelemetry().stream()
+                        .anyMatch(line -> line.startsWith("Driver Position : SOUTH")),
+                () -> "telemetry never reported the driver position; last was "
+                        + harness.lastTelemetry());
     }
 
     @Test
-    void wiresTheDiagonalsSoAForwardStickTurnsEveryWheelForward() {
-        harness.launch();
-        awaitInitLoop();
-        harness.pressStart();
+    void forwardStickDrivesTheWayTheRobotFacedAtStart() {
+        launchAndStart();
+        Pose2d pose = drive(0.0, -1.0, 0.0f, 0.5);
 
-        // Push the left stick fully forward. The SDK reports forward as negative Y.
+        assertTrue(pose.x() > 0.2, "expected the robot to drive along +X, got " + pose);
+        assertTrue(Math.abs(pose.y()) < 0.1 * pose.x(), "expected no lateral drift, got " + pose);
+        assertTrue(Math.abs(pose.headingDegrees()) < 2.0, "expected no rotation, got " + pose);
+    }
+
+    @Test
+    void rightStickStrafesTowardTheRobotsRight() {
+        launchAndStart();
+        Pose2d pose = drive(1.0, 0.0, 0.0f, 0.5);
+
+        // Facing +X, the robot's right is -Y.
+        assertTrue(pose.y() < -0.15, "expected the robot to strafe toward -Y, got " + pose);
+        assertTrue(Math.abs(pose.x()) < 0.1 * -pose.y(), "expected no forward drift, got " + pose);
+        assertTrue(Math.abs(pose.headingDegrees()) < 2.0, "expected no rotation, got " + pose);
+    }
+
+    @Test
+    void slowModeDrivesWellUnderHalfSpeed() {
+        launchAndStart();
+        double full = drive(0.0, -1.0, 0.0f, 0.5).x();
+        harness.pressStop();
+        harness.awaitCompletion(2000);
+
+        launchAndStart();
+        double slow = drive(0.0, -1.0, 1.0f, 0.5).x();
+
+        assertTrue(slow > 0.0, "slow mode should still drive, got " + slow);
+        assertTrue(slow < 0.5 * full, "slow mode covered " + slow + " m against " + full + " m");
+    }
+
+    @Test
+    void forwardStickKeepsDrivingDownFieldAfterTheChassisTurns() {
+        launchAndStart();
+        // A quarter turn left after START: the robot now faces +Y, but NORTH is still +X.
+        hardware.drive().setPose(new Pose2d(0.0, 0.0, Math.PI / 2));
+        harness.advance(TICK);
+        assertEquals(90.0, yaw(), 0.5, "the IMU should report the turn");
+
+        Pose2d pose = drive(0.0, -1.0, 0.0f, 0.5);
+
+        assertTrue(pose.x() > 0.15, "expected field-centric drive along +X, got " + pose);
+        assertTrue(Math.abs(pose.y()) < 0.1 * pose.x(), "expected no drift along Y, got " + pose);
+    }
+
+    @Test
+    void reportsWhichWayTheRobotFacesInTelemetry() {
+        launchAndStart();
+        hardware.drive().setPose(new Pose2d(0.0, 0.0, -Math.PI / 2));
+        harness.advance(TICK);
+
+        await(() -> harness.lastTelemetry().contains("Facing (vs start) : EAST"),
+                () -> "telemetry never reported the new heading; last was " + harness.lastTelemetry());
+        assertEquals(-90.0, yaw(), 0.5);
+    }
+
+    @Test
+    void triggerRunsTheIntakeInAndBumperEjects() {
+        launchAndStart();
+
+        harness.gamepad1().right_trigger = 1.0f;
+        awaitIntakePower(IntakeLogic.INTAKE_POWER);
+
+        // Eject wins over a held trigger.
+        harness.gamepad1().right_bumper = true;
+        awaitIntakePower(-IntakeLogic.EJECT_POWER);
+
+        harness.gamepad1().right_bumper = false;
+        harness.gamepad1().right_trigger = 0.0f;
+        awaitIntakePower(0.0);
+    }
+
+    @Test
+    void stoppingCutsPowerToEveryWheelAndTheIntake() {
+        launchAndStart();
         harness.gamepad1().left_stick_y = -1.0f;
-        awaitWheelPowers(1.0, 1.0, 1.0, 1.0);
-
-        // Left and right are mounted mirrored, so the same commanded power has to spin the physical
-        // shafts in opposite senses for the robot to actually go straight.
-        assertEquals(-1.0, hardware.motor("FL").state().getPhysicalPower(), 1e-9);
-        assertEquals(-1.0, hardware.motor("BL").state().getPhysicalPower(), 1e-9);
-        assertEquals(1.0, hardware.motor("FR").state().getPhysicalPower(), 1e-9);
-        assertEquals(1.0, hardware.motor("BR").state().getPhysicalPower(), 1e-9);
-
-        hardware.advance(1.0);
-        for (String wheel : WHEELS) {
-            assertEquals(1000, hardware.motor(wheel).getCurrentPosition(), wheel);
-        }
-    }
-
-    @Test
-    void strafesWhenTheStickGoesSideways() {
-        harness.launch();
-        awaitInitLoop();
-        harness.pressStart();
-
-        harness.gamepad1().left_stick_x = 1.0f;
-
-        // A right strafe is the mecanum X pattern: the diagonals oppose each other.
-        awaitWheelPowers(-1.0, 1.0, 1.0, -1.0);
-    }
-
-    @Test
-    void slowModeScalesEveryWheelDown() {
-        harness.launch();
-        awaitInitLoop();
-        harness.pressStart();
-
-        harness.gamepad1().left_stick_y = -1.0f;
-        harness.gamepad1().left_trigger = 1.0f;
-
-        double slow = IamYouLogic.SLOW_MODE_DRIVE_MULT;
-        awaitWheelPowers(slow, slow, slow, slow);
-    }
-
-    @Test
-    void heldHeadingKeepsTheRobotDrivingDownFieldWhenTheChassisRotates() {
-        harness.launch();
-        awaitInitLoop();
-        harness.pressStart();
-
-        harness.gamepad1().left_stick_y = -1.0f;
-        awaitWheelPowers(1.0, 1.0, 1.0, 1.0);
-
-        // Spin the chassis a quarter turn without touching the stick: field-centric drive has to
-        // turn a forward request into a pure strafe to keep going the same way down the field.
-        hardware.imu("imu").state().setYaw(90.0);
-
-        awaitWheelPowers(-1.0, 1.0, 1.0, -1.0);
-    }
-
-    @Test
-    void stoppingCutsPowerToEveryWheel() {
-        harness.launch();
-        awaitInitLoop();
-        harness.pressStart();
-        harness.gamepad1().left_stick_y = -1.0f;
-        awaitWheelPowers(1.0, 1.0, 1.0, 1.0);
+        harness.gamepad1().right_trigger = 1.0f;
+        awaitSteadyWheelPowers();
+        awaitIntakePower(IntakeLogic.INTAKE_POWER);
 
         harness.pressStop();
         harness.awaitCompletion(2000);
@@ -137,39 +153,91 @@ class IamYouHeadlessTest {
         for (String wheel : WHEELS) {
             assertEquals(0.0, hardware.motor(wheel).getPower(), 1e-9, wheel);
         }
+        assertEquals(0.0, hardware.motor(IntakeHardware.NAME).getPower(), 1e-9);
     }
 
-    /**
-     * Waits until the OpMode is spinning in its init loop.
-     *
-     * <p>Anchored on the init loop's own line rather than the one-shot {@code "Status :
-     * Initialized"} frame that precedes it: that first frame is immediately overwritten by the
-     * loop, so polling the latest frame for it is a race.</p>
-     */
-    private void awaitInitLoop() {
+    /** A fresh robot at the origin facing +X, its OpMode spinning in the init loop. */
+    private void launch() {
+        hardware = new VerityRobot().create();
+        hardware.drive().setPose(Pose2d.ORIGIN);
+        harness = OpModeHarness.forLinear(new iamyou(), hardware);
+        harness.launch();
         await(() -> harness.lastTelemetry().contains("Status : Initialized - waiting for start"),
                 () -> "the OpMode never reached its init loop; last telemetry was "
                         + harness.lastTelemetry());
     }
 
     /**
-     * Polls until all four wheels carry exactly these commanded powers.
+     * Presses START and waits for the main loop.
      *
-     * <p>Waiting on the specific values rather than on "any power at all" is what makes this
-     * deterministic: the OpMode reads the gamepad fields on its own schedule, so an intermediate
-     * loop iteration may well have seen only some of the inputs the test just wrote.</p>
+     * <p>iamyou zeroes the IMU after START, so a test that turns the chassis before that reset
+     * lands has its turn become NORTH. The loop's own telemetry is the first thing that comes
+     * after the reset.</p>
      */
-    private void awaitWheelPowers(double fl, double fr, double bl, double br) {
-        double[] expected = {fl, fr, bl, br};
-        await(() -> {
+    private void launchAndStart() {
+        launch();
+        harness.pressStart();
+        await(() -> harness.lastTelemetry().stream()
+                        .anyMatch(line -> line.startsWith("Facing (vs start) : ")),
+                () -> "the OpMode never reached its main loop; last telemetry was "
+                        + harness.lastTelemetry());
+    }
+
+    /**
+     * Holds the sticks, waits for the OpMode's command to settle, then drives for {@code seconds}
+     * of simulated time from where the robot stands.
+     *
+     * <p>The wait matters: iamyou ramps its command, and simulated time advancing mid-ramp would
+     * measure the ramp rather than the drive.</p>
+     */
+    private Pose2d drive(double leftX, double leftY, float leftTrigger, double seconds) {
+        harness.gamepad1().left_stick_x = (float) leftX;
+        harness.gamepad1().left_stick_y = (float) leftY;
+        harness.gamepad1().left_trigger = leftTrigger;
+        awaitSteadyWheelPowers();
+
+        Pose2d start = hardware.drive().pose();
+        for (int tick = 0; tick < Math.round(seconds / TICK); tick++) {
+            harness.advance(TICK);
+            harness.eventLoopIteration();
+        }
+        Pose2d end = hardware.drive().pose();
+        return new Pose2d(end.x() - start.x(), end.y() - start.y(), end.heading() - start.heading());
+    }
+
+    /** Polls until every wheel is commanded and the commands have stopped changing. */
+    private void awaitSteadyWheelPowers() {
+        double[] last = new double[WHEELS.length];
+        long steadySince = System.nanoTime();
+        long deadline = steadySince + 2_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            failIfTheOpModeDied();
+            boolean changed = false;
+            boolean commanded = true;
             for (int i = 0; i < WHEELS.length; i++) {
-                if (Math.abs(hardware.motor(WHEELS[i]).getPower() - expected[i]) > 1e-9) {
-                    return false;
-                }
+                double power = hardware.motor(WHEELS[i]).getPower();
+                changed |= Math.abs(power - last[i]) > 1e-9;
+                commanded &= power != 0.0;
+                last[i] = power;
             }
-            return true;
-        }, () -> "wheels never reached " + java.util.Arrays.toString(expected) + "; they were "
-                + currentWheelPowers());
+            if (changed || !commanded) {
+                steadySince = System.nanoTime();
+            } else if (System.nanoTime() - steadySince > 50_000_000L) {
+                return;
+            }
+            Thread.yield();
+        }
+        throw new AssertionError("the wheel powers never settled; they were " + currentWheelPowers());
+    }
+
+    private void awaitIntakePower(double expected) {
+        await(() -> Math.abs(hardware.motor(IntakeHardware.NAME).getPower() - expected) < 1e-9,
+                () -> "the intake never reached " + expected + "; it was "
+                        + hardware.motor(IntakeHardware.NAME).getPower());
+    }
+
+    private double yaw() {
+        return hardware.imu("imu").getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
     }
 
     private String currentWheelPowers() {
@@ -191,25 +259,15 @@ class IamYouHeadlessTest {
             if (condition.getAsBoolean()) {
                 return;
             }
-            if (harness.failure() != null) {
-                throw new AssertionError("the OpMode thread died", harness.failure());
-            }
+            failIfTheOpModeDied();
             Thread.yield();
         }
         throw new AssertionError(message.get());
     }
 
-    @Test
-    void reportsLiveHeadingInTelemetry() {
-        harness.launch();
-        awaitInitLoop();
-        harness.pressStart();
-        hardware.imu("imu").state().setYaw(-90.0);
-
-        await(() -> harness.lastTelemetry().contains("Cardinal Direction : EAST"),
-                () -> "telemetry never reported the new heading; last was " + harness.lastTelemetry());
-
-        assertEquals(-90.0,
-                hardware.imu("imu").getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES), 1e-6);
+    private void failIfTheOpModeDied() {
+        if (harness.failure() != null) {
+            throw new AssertionError("the OpMode thread died", harness.failure());
+        }
     }
 }

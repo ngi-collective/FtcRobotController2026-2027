@@ -47,11 +47,11 @@ jobs:
       - name: Verify toolchain
         run: mise run verify-toolchain
 
-     # - name: Test
-     #   run: mise run test
+      - name: Test
+        run: mise run test
 
-     # - name: Lint
-#        run: mise run lint
+      - name: Lint
+        run: mise run lint
 
       - name: Upload lint report
         if: always()
@@ -61,5 +61,5 @@ jobs:
           path: TeamCode/build/reports/lint-results-robotDebug.html
           if-no-files-found: warn
 
-   #   - name: Build APK
-   #     run: mise run build
+      - name: Build APK
+        run: mise run build
