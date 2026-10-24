@@ -9,6 +9,7 @@ import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
 import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
 import org.ngicollective.ftcsim.harness.LinearOpModeHarness;
 import org.ngicollective.ftcsim.harness.OpModeHarness;
+import org.ngicollective.ftcsim.sim.Pose2d;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,10 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>The OpModes are unmodified: they look their hardware up through {@code hardwareMap}, read
  * the gamepads, and push telemetry exactly as they do on the field. Everything they touch is
  * simulated by the test framework.</p>
+ *
+ * <p>Driving is asserted on pose, not wheel powers. {@link IamYouLogic} shapes, caps and
+ * friction-boosts every command, so the powers are tuning; where the robot goes is the
+ * behaviour. {@link IamYouLogicTest} owns the numbers.</p>
  */
 class IamYouHeadlessTest {
 
     private static final String[] WHEELS = {"FL", "FR", "BL", "BR"};
+    private static final double TICK = 0.02;
 
     /** Steady wheel power for a full stick: the speed cap plus the static-friction push. */
     private static final double FULL = iamyou.TRANSLATION_SPEED_CAP + iamyou.STATIC_FRICTION_POWER;
@@ -68,7 +74,80 @@ class IamYouHeadlessTest {
     void wiresTheDiagonalsSoAForwardStickTurnsEveryWheelForward() {
         start(new iamyou());
 
-        // Push the left stick fully forward. The SDK reports forward as negative Y.
+        assertTrue(pose.x() > 0.2, "expected the robot to drive along +X, got " + pose);
+        assertTrue(Math.abs(pose.y()) < 0.1 * pose.x(), "expected no lateral drift, got " + pose);
+        assertTrue(Math.abs(pose.headingDegrees()) < 2.0, "expected no rotation, got " + pose);
+    }
+
+    @Test
+    void rightStickStrafesTowardTheRobotsRight() {
+        launchAndStart();
+        Pose2d pose = drive(1.0, 0.0, 0.0f, 0.5);
+
+        // Facing +X, the robot's right is -Y.
+        assertTrue(pose.y() < -0.15, "expected the robot to strafe toward -Y, got " + pose);
+        assertTrue(Math.abs(pose.x()) < 0.1 * -pose.y(), "expected no forward drift, got " + pose);
+        assertTrue(Math.abs(pose.headingDegrees()) < 2.0, "expected no rotation, got " + pose);
+    }
+
+    @Test
+    void slowModeDrivesWellUnderHalfSpeed() {
+        launchAndStart();
+        double full = drive(0.0, -1.0, 0.0f, 0.5).x();
+        harness.pressStop();
+        harness.awaitCompletion(2000);
+
+        launchAndStart();
+        double slow = drive(0.0, -1.0, 1.0f, 0.5).x();
+
+        assertTrue(slow > 0.0, "slow mode should still drive, got " + slow);
+        assertTrue(slow < 0.5 * full, "slow mode covered " + slow + " m against " + full + " m");
+    }
+
+    @Test
+    void forwardStickKeepsDrivingDownFieldAfterTheChassisTurns() {
+        launchAndStart();
+        // A quarter turn left after START: the robot now faces +Y, but NORTH is still +X.
+        hardware.drive().setPose(new Pose2d(0.0, 0.0, Math.PI / 2));
+        harness.advance(TICK);
+        assertEquals(90.0, yaw(), 0.5, "the IMU should report the turn");
+
+        Pose2d pose = drive(0.0, -1.0, 0.0f, 0.5);
+
+        assertTrue(pose.x() > 0.15, "expected field-centric drive along +X, got " + pose);
+        assertTrue(Math.abs(pose.y()) < 0.1 * pose.x(), "expected no drift along Y, got " + pose);
+    }
+
+    @Test
+    void reportsWhichWayTheRobotFacesInTelemetry() {
+        launchAndStart();
+        hardware.drive().setPose(new Pose2d(0.0, 0.0, -Math.PI / 2));
+        harness.advance(TICK);
+
+        await(() -> harness.lastTelemetry().contains("Facing (vs start) : EAST"),
+                () -> "telemetry never reported the new heading; last was " + harness.lastTelemetry());
+        assertEquals(-90.0, yaw(), 0.5);
+    }
+
+    @Test
+    void triggerRunsTheIntakeInAndBumperEjects() {
+        launchAndStart();
+
+        harness.gamepad1().right_trigger = 1.0f;
+        awaitIntakePower(IntakeLogic.INTAKE_POWER);
+
+        // Eject wins over a held trigger.
+        harness.gamepad1().right_bumper = true;
+        awaitIntakePower(-IntakeLogic.EJECT_POWER);
+
+        harness.gamepad1().right_bumper = false;
+        harness.gamepad1().right_trigger = 0.0f;
+        awaitIntakePower(0.0);
+    }
+
+    @Test
+    void stoppingCutsPowerToEveryWheelAndTheIntake() {
+        launchAndStart();
         harness.gamepad1().left_stick_y = -1.0f;
         awaitWheelPowers(FULL, FULL, FULL, FULL);
 
@@ -128,6 +207,7 @@ class IamYouHeadlessTest {
         for (String wheel : WHEELS) {
             assertEquals(0.0, hardware.motor(wheel).getPower(), 1e-9, wheel);
         }
+        assertEquals(0.0, hardware.motor(IntakeHardware.NAME).getPower(), 1e-9);
     }
 
     @Test
@@ -246,23 +326,76 @@ class IamYouHeadlessTest {
     }
 
     /**
-     * Polls until all four wheels carry exactly these commanded powers.
+     * Presses START and waits for the main loop.
      *
      * <p>Waiting on the specific values rather than on "any power at all" is what makes this
      * deterministic: the OpMode reads the gamepad fields on its own schedule and ramps toward the
      * command, so an intermediate loop may well show only part of the way there.</p>
      */
-    private void awaitWheelPowers(double fl, double fr, double bl, double br) {
-        double[] expected = {fl, fr, bl, br};
-        await(() -> {
+    private void launchAndStart() {
+        launch();
+        harness.pressStart();
+        await(() -> harness.lastTelemetry().stream()
+                        .anyMatch(line -> line.startsWith("Facing (vs start) : ")),
+                () -> "the OpMode never reached its main loop; last telemetry was "
+                        + harness.lastTelemetry());
+    }
+
+    /**
+     * Holds the sticks, waits for the OpMode's command to settle, then drives for {@code seconds}
+     * of simulated time from where the robot stands.
+     *
+     * <p>The wait matters: iamyou ramps its command, and simulated time advancing mid-ramp would
+     * measure the ramp rather than the drive.</p>
+     */
+    private Pose2d drive(double leftX, double leftY, float leftTrigger, double seconds) {
+        harness.gamepad1().left_stick_x = (float) leftX;
+        harness.gamepad1().left_stick_y = (float) leftY;
+        harness.gamepad1().left_trigger = leftTrigger;
+        awaitSteadyWheelPowers();
+
+        Pose2d start = hardware.drive().pose();
+        for (int tick = 0; tick < Math.round(seconds / TICK); tick++) {
+            harness.advance(TICK);
+            harness.eventLoopIteration();
+        }
+        Pose2d end = hardware.drive().pose();
+        return new Pose2d(end.x() - start.x(), end.y() - start.y(), end.heading() - start.heading());
+    }
+
+    /** Polls until every wheel is commanded and the commands have stopped changing. */
+    private void awaitSteadyWheelPowers() {
+        double[] last = new double[WHEELS.length];
+        long steadySince = System.nanoTime();
+        long deadline = steadySince + 2_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            failIfTheOpModeDied();
+            boolean changed = false;
+            boolean commanded = true;
             for (int i = 0; i < WHEELS.length; i++) {
-                if (Math.abs(hardware.motor(WHEELS[i]).getPower() - expected[i]) > 1e-9) {
-                    return false;
-                }
+                double power = hardware.motor(WHEELS[i]).getPower();
+                changed |= Math.abs(power - last[i]) > 1e-9;
+                commanded &= power != 0.0;
+                last[i] = power;
             }
-            return true;
-        }, () -> "wheels never reached " + java.util.Arrays.toString(expected) + "; they were "
-                + currentWheelPowers());
+            if (changed || !commanded) {
+                steadySince = System.nanoTime();
+            } else if (System.nanoTime() - steadySince > 50_000_000L) {
+                return;
+            }
+            Thread.yield();
+        }
+        throw new AssertionError("the wheel powers never settled; they were " + currentWheelPowers());
+    }
+
+    private void awaitIntakePower(double expected) {
+        await(() -> Math.abs(hardware.motor(IntakeHardware.NAME).getPower() - expected) < 1e-9,
+                () -> "the intake never reached " + expected + "; it was "
+                        + hardware.motor(IntakeHardware.NAME).getPower());
+    }
+
+    private double yaw() {
+        return hardware.imu("imu").getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
     }
 
     private String currentWheelPowers() {
@@ -284,11 +417,15 @@ class IamYouHeadlessTest {
             if (condition.getAsBoolean()) {
                 return;
             }
-            if (harness.failure() != null) {
-                throw new AssertionError("the OpMode thread died", harness.failure());
-            }
+            failIfTheOpModeDied();
             Thread.yield();
         }
         throw new AssertionError(message.get());
+    }
+
+    private void failIfTheOpModeDied() {
+        if (harness.failure() != null) {
+            throw new AssertionError("the OpMode thread died", harness.failure());
+        }
     }
 }

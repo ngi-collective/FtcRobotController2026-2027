@@ -160,12 +160,3 @@ Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root (not yet created; created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
-
-### Dashboard probes
-
-Dashboard slow, choppy, or suspected of leaking: measure with `driver-hub-dashboard/src/probe.ts`
-(open the UI with `?probe`) and `tools/rss-curve.mjs` before theorising. A JS heap counter and a
-DevTools profile both answer this question wrongly. See `docs/agents/dashboard-probes.md`, which
-also carries the 3D view's measured budget — draw calls, GPU milliseconds per frame, and what
-each of resolution, shadows and materials actually costs — plus the levers that were tried and
-left alone.

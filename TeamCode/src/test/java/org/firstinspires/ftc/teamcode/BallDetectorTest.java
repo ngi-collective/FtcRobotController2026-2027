@@ -1,17 +1,18 @@
 package org.firstinspires.ftc.teamcode;
 
 import org.junit.jupiter.api.Test;
-import org.ngicollective.testframework.camera.CameraIntrinsics;
-import org.ngicollective.testframework.camera.CameraView;
-import org.ngicollective.testframework.camera.GameElement;
-import org.ngicollective.testframework.camera.Pixel;
-import org.ngicollective.testframework.camera.Pose3d;
-import org.ngicollective.testframework.camera.SceneFrameSource;
-import org.ngicollective.testframework.camera.SimulatedCamera;
-import org.ngicollective.testframework.camera.SimulatedScene;
-import org.ngicollective.testframework.camera.SyntheticFrame;
-import org.ngicollective.testframework.camera.Vec3;
-import org.ngicollective.testframework.sim.Pose2d;
+import org.ngicollective.ftcsim.camera.CameraIntrinsics;
+import org.ngicollective.ftcsim.camera.CameraView;
+import org.ngicollective.ftcsim.camera.GameElement;
+import org.ngicollective.ftcsim.camera.Pixel;
+import org.ngicollective.ftcsim.camera.Pose3d;
+import org.ngicollective.ftcsim.camera.SceneFrameSource;
+import org.ngicollective.ftcsim.camera.SimulatedCamera;
+import org.ngicollective.ftcsim.camera.SimulatedScene;
+import org.ngicollective.ftcsim.camera.SyntheticFrame;
+import org.ngicollective.ftcsim.camera.Vec3;
+import org.ngicollective.ftcsim.season.BioBuzzElements;
+import org.ngicollective.ftcsim.sim.Pose2d;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -68,7 +69,7 @@ class BallDetectorTest {
 
     @Test
     void aPollenBallIsYellowAndRangesToItsTrueDepth() {
-        GameElement pollen = GameElement.pollen(1.0, 0.0);
+        GameElement pollen = BioBuzzElements.pollen(1.0, 0.0);
 
         List<BallDetector.Detection> found = detect(pollen);
         assertEquals(1, found.size(), "exactly the one ball in frame should be detected");
@@ -79,7 +80,7 @@ class BallDetectorTest {
 
     @Test
     void aRedNectarBallIsRedNectarAtItsTrueRange() {
-        GameElement nectar = GameElement.redNectar(1.2, -0.15);
+        GameElement nectar = BioBuzzElements.redNectar(1.2, -0.15);
 
         List<BallDetector.Detection> found = detect(nectar);
         assertEquals(1, found.size());
@@ -90,7 +91,7 @@ class BallDetectorTest {
 
     @Test
     void aBlueNectarBallIsBlueNectarAtItsTrueRange() {
-        GameElement nectar = GameElement.blueNectar(0.9, 0.20);
+        GameElement nectar = BioBuzzElements.blueNectar(0.9, 0.20);
 
         List<BallDetector.Detection> found = detect(nectar);
         assertEquals(1, found.size());
@@ -101,9 +102,9 @@ class BallDetectorTest {
 
     @Test
     void threeBallsAreEachClassifiedAndRanged() {
-        GameElement pollen = GameElement.pollen(0.8, -0.25);
-        GameElement red = GameElement.redNectar(1.3, 0.0);
-        GameElement blue = GameElement.blueNectar(1.1, 0.30);
+        GameElement pollen = BioBuzzElements.pollen(0.8, -0.25);
+        GameElement red = BioBuzzElements.redNectar(1.3, 0.0);
+        GameElement blue = BioBuzzElements.blueNectar(1.1, 0.30);
         List<GameElement> balls = Arrays.asList(pollen, red, blue);
 
         List<BallDetector.Detection> found = detect(balls);
@@ -122,7 +123,7 @@ class BallDetectorTest {
         // 10 degrees down at the floor ahead of the mouth.
         SimulatedCamera camera = new SimulatedCamera("Ball Cam", LENS,
                 Pose3d.ofDegrees(new Vec3(0.16, 0.0, 0.25), 0.0, -10.0, 0.0));
-        GameElement ball = GameElement.pollen(1.0, 0.20);
+        GameElement ball = BioBuzzElements.pollen(1.0, 0.20);
 
         SimulatedScene scene = SimulatedScene.of().withElements(Collections.singletonList(ball));
         SyntheticFrame frame = new SyntheticFrame(LENS.width(), LENS.height());

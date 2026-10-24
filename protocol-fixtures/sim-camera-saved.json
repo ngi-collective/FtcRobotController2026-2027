@@ -1,7 +1,0 @@
-{
-  "namespace": "sim",
-  "type": "camera-saved",
-  "payload": {
-    "path": "/Users/team/robot/TeamCode/robot-config/verity.json"
-  }
-}

@@ -33,7 +33,8 @@
     "FR":       { "role": "frontRight", "mirrored": false, "rpm": 312.0,  "ticksPerRevolution": 537.7 },
     "BL":       { "role": "backLeft",   "mirrored": true,  "rpm": 312.0,  "ticksPerRevolution": 537.7 },
     "BR":       { "role": "backRight",  "mirrored": false, "rpm": 312.0,  "ticksPerRevolution": 537.7 },
-    "flywheel": { "role": "launcher",   "mirrored": false, "rpm": 6000.0, "ticksPerRevolution": 28.0 }
+    "flywheel": { "role": "launcher",   "mirrored": false, "rpm": 6000.0, "ticksPerRevolution": 28.0 },
+    "INTAKE":   { "role": "intake",     "mirrored": false, "rpm": 312.0,  "ticksPerRevolution": 537.7 }
   },
   "launchers": {
     "flywheel": {
