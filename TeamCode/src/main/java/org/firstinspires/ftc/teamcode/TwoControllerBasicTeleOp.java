@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode;
 
-
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -32,7 +31,6 @@ public class TwoControllerBasicTeleOp extends LinearOpMode {
         DcMotorEx intake = hardwareMap.get(DcMotorEx.class, "INTAKE");
         intake.setDirection(DcMotorSimple.Direction.FORWARD);
         intake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-
 
         DcMotorEx outtake = hardwareMap.get(DcMotorEx.class, "OUTTAKE");
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
@@ -67,7 +65,6 @@ public class TwoControllerBasicTeleOp extends LinearOpMode {
                 intake.setPower(0.00);
             }
 
-
             //outtake power
             if (gamepad2.right_trigger!=0){
                 outtake.setVelocity(gamepad2.right_trigger*-100000);
@@ -75,9 +72,7 @@ public class TwoControllerBasicTeleOp extends LinearOpMode {
                 outtake.setPower(0);
             }
 
-
             drive.setPowers(powers);
-
 
             telemetry.addData("FL | FR", "%.2f | %.2f", powers.getFL(), powers.getFR());
             telemetry.addData("BL | BR", "%.2f | %.2f", powers.getBL(), powers.getBR());
