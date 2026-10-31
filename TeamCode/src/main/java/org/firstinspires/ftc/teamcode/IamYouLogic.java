@@ -27,22 +27,25 @@ public class IamYouLogic {
      * To tune: drive forward at the same stick amount for 1 s, then strafe for 1 s, and measure both distances.
      * STRAFE_COMPENSATION = forward distance / strafe distance. 1.0 = no compensation.
      */
-    public static final double STRAFE_COMPENSATION      = 1.30;
+    public static final double STRAFE_COMPENSATION      = 1.25;
 
     // ---- Smoothness constants (tune these on the robot) ----
     /**
-     * Translation speed at full stick, as a fraction of max wheel power. A mecanum drive can only reach about
-     * 0.6-0.7 of its axis speed on the diagonals, so asking for more than that in every direction clips the
-     * diagonals and turns a circle of stick motion into a diamond. Raise toward 1.0 for more top speed at the
-     * cost of a more diamond-shaped feel.
+     * Translation speed at full stick, as a fraction of max wheel power. Direction is ALWAYS preserved (the mixer
+     * scales every wheel by the same factor), so a bigger number never bends the path or snaps to an axis. It only
+     * makes the diagonals a little slower than straight-ahead once a wheel would exceed 100%. 0.85 is a good
+     * fast-but-smooth default; 1.0 is the fastest and 0.62 is perfectly uniform speed in every direction.
      */
-    public static final double TRANSLATION_SPEED_CAP = 0.62;
+    public static final double TRANSLATION_SPEED_CAP = 0.85;
     /** Stick response curve: 0 = linear, 1 = fully cubic (gentle near center, still reaches full at the edge). */
-    public static final double TRANSLATION_EXPO      = 0.35;
+    public static final double TRANSLATION_EXPO      = 0.30;
     public static final double TWIST_EXPO            = 0.35;
-    /** Acceleration limit on the translation command, in power per second. 6.0 means 0 to full in about 0.12 s. Lower = softer. */
-    public static final double MAX_TRANSLATION_CHANGE_PER_SEC = 6.0;
-    public static final double MAX_TWIST_CHANGE_PER_SEC       = 8.0;
+    /** How fast the command may GROW, in power per second. 7.0 = 0 to full in about 0.14 s (soft launch, no wheelspin). */
+    public static final double MAX_TRANSLATION_CHANGE_PER_SEC = 7.0;
+    /** How fast the command may SHRINK. Much higher than the launch rate so lifting off the stick feels instant. */
+    public static final double MAX_TRANSLATION_DECEL_PER_SEC  = 24.0;
+    public static final double MAX_TWIST_CHANGE_PER_SEC       = 9.0;
+    public static final double MAX_TWIST_DECEL_PER_SEC        = 30.0;
     public static final double MIN_DT = 0.001;
     public static final double MAX_DT = 0.100;
 
@@ -65,7 +68,11 @@ public class IamYouLogic {
     /** Below this fraction of max speed a wheel counts as stopped. */
     public static final double BRAKE_MIN_SPEED         = 0.05;
     /** Seconds of zero stick input before braking engages. Stops a quick stick flick through center from triggering a brake. */
-    public static final double BRAKE_ENGAGE_SEC        = 0.04;
+    public static final double BRAKE_ENGAGE_SEC        = 0.03;
+    /** Absolute limit on how long the stop assist may push, no matter what the encoders say. This is the runaway watchdog. */
+    public static final double BRAKE_MAX_SEC           = 0.18;
+    /** A wheel must have been commanded at least this hard for its direction to count as "the way it was driving". */
+    public static final double BRAKE_DRIVE_THRESHOLD   = 0.08;
 
     public enum DriverPosition {
         SOUTH(0.0),     // behind the robot's starting orientation (default)
@@ -95,6 +102,10 @@ public class IamYouLogic {
         public final double blVelocity;
         public final double brVelocity;
         public final double dtSeconds;       // time since the previous loop, for acceleration smoothing
+        /** Auto-aim turn command (clockwise positive). NaN = not auto-aiming. Replaces the right stick while set. */
+        public final double autoTwist;
+        /** True = the left stick is robot-relative (forward = where the robot faces), ignoring heading and driver position. */
+        public final boolean robotCentric;
 
         public DriveParameters(double leftStickX, double leftStickY, double rightStickX,
                                double leftTrigger, double headingDegrees,
@@ -102,6 +113,16 @@ public class IamYouLogic {
                                double flVelocity, double frVelocity,
                                double blVelocity, double brVelocity,
                                double dtSeconds) {
+            this(leftStickX, leftStickY, rightStickX, leftTrigger, headingDegrees, driverPosition,
+                    flVelocity, frVelocity, blVelocity, brVelocity, dtSeconds, Double.NaN, false);
+        }
+
+        public DriveParameters(double leftStickX, double leftStickY, double rightStickX,
+                               double leftTrigger, double headingDegrees,
+                               DriverPosition driverPosition,
+                               double flVelocity, double frVelocity,
+                               double blVelocity, double brVelocity,
+                               double dtSeconds, double autoTwist, boolean robotCentric) {
             this.leftStickX = leftStickX;
             this.leftStickY = leftStickY;
             this.rightStickX = rightStickX;
@@ -113,6 +134,8 @@ public class IamYouLogic {
             this.blVelocity = blVelocity;
             this.brVelocity = brVelocity;
             this.dtSeconds = dtSeconds;
+            this.autoTwist = autoTwist;
+            this.robotCentric = robotCentric;
         }
     }
 
@@ -146,9 +169,12 @@ public class IamYouLogic {
     // Seconds of continuous zero stick input (for the stop assist).
     private double noInputSeconds = 0.0;
     private boolean wasBraking = false;
-    // Per-wheel brake state, order: FL, FR, BL, BR.
-    private final int[] brakeDirection = new int[4];
+    private double brakeSeconds = 0.0;
+    // Per-wheel stop-assist state, order: FL, FR, BL, BR.
+    /** Direction (+1/-1/0) each wheel was last driven hard. Comes from OUR command, never from the encoder's sign. */
+    private final int[] driveSign = new int[4];
     private final boolean[] brakeDone = new boolean[4];
+    private final double[] lastOut = new double[4];
 
     // Smoothed commands (stick space), carried between loops for the acceleration limiter.
     private double cmdRight = 0.0;
@@ -156,12 +182,23 @@ public class IamYouLogic {
     private double cmdTwist = 0.0;
 
     public DriveResult calculate(DriveParameters params) {
-        double dt = Math.max(MIN_DT, Math.min(MAX_DT, params.dtSeconds));
+        // Bad numbers must never reach a motor: one NaN or Infinity would otherwise spread through every wheel.
+        double dt = Math.max(MIN_DT, Math.min(MAX_DT, finite(params.dtSeconds, 0.02)));
+        double lsx = finite(params.leftStickX, 0.0);
+        double lsy = finite(params.leftStickY, 0.0);
+        double rsx = finite(params.rightStickX, 0.0);
+        double headingDeg = finite(params.headingDegrees, 0.0);
+        boolean autoAim = !Double.isNaN(params.autoTwist) && !Double.isInfinite(params.autoTwist);
 
         // ================= STICKS =================
         // Convert to (x = right, y = forward). The deadzone is circular and rescaled, so direction is never distorted.
-        double[] stick = radialDeadzone(params.leftStickX, -params.leftStickY, JOYSTICK_DEADZONE);
-        double twistIn = axisDeadzone(params.rightStickX, JOYSTICK_DEADZONE);  // positive = clockwise
+        double[] stick = radialDeadzone(lsx, -lsy, JOYSTICK_DEADZONE);
+        double twistIn = axisDeadzone(rsx, JOYSTICK_DEADZONE);  // positive = clockwise
+        // The driver's right stick always wins; auto-aim only steers while it is centered.
+        boolean aimActive = autoAim && twistIn == 0.0;
+        if (aimActive) {
+            twistIn = Math.max(-1.0, Math.min(1.0, params.autoTwist));
+        }
 
         boolean noInput = stick[0] == 0.0 && stick[1] == 0.0 && twistIn == 0.0;
         noInputSeconds = noInput ? noInputSeconds + dt : 0.0;
@@ -172,18 +209,21 @@ public class IamYouLogic {
         double mag = Math.hypot(stick[0], stick[1]);
         double targetRight = 0.0;
         double targetForward = 0.0;
-        if (mag > 0.0) {
+        if (mag > 1e-9) {
             double shaped = ((1.0 - TRANSLATION_EXPO) * mag + TRANSLATION_EXPO * mag * mag * mag) * TRANSLATION_SPEED_CAP;
             targetRight   = stick[0] / mag * shaped;
             targetForward = stick[1] / mag * shaped;
         }
+        // Auto-aim output is already a finished command, so it skips the stick curve.
         double tMag = Math.abs(twistIn);
-        double targetTwist = Math.copySign(
-                (1.0 - TWIST_EXPO) * tMag + TWIST_EXPO * tMag * tMag * tMag, twistIn);
+        double targetTwist = !aimActive
+                ? Math.copySign((1.0 - TWIST_EXPO) * tMag + TWIST_EXPO * tMag * tMag * tMag, twistIn)
+                : twistIn;
 
         // ================= ACCELERATION SMOOTHING =================
-        // Limit how fast the command can change. The limit acts on the 2D vector's length, not per axis,
-        // so a curved stick path stays a curved path instead of getting squared off.
+        // Limit how fast the command can change. The limit acts on the 2D vector's length, not per axis, so a
+        // curved stick path stays a curved path instead of getting squared off. Growing is gentle; shrinking is
+        // fast, so there is no input lag when you back off the stick.
         if (braking) {
             cmdRight = 0.0;
             cmdForward = 0.0;
@@ -192,7 +232,8 @@ public class IamYouLogic {
             double dx = targetRight - cmdRight;
             double dy = targetForward - cmdForward;
             double dist = Math.hypot(dx, dy);
-            double maxStep = MAX_TRANSLATION_CHANGE_PER_SEC * dt;
+            boolean shrinking = Math.hypot(targetRight, targetForward) < Math.hypot(cmdRight, cmdForward);
+            double maxStep = (shrinking ? MAX_TRANSLATION_DECEL_PER_SEC : MAX_TRANSLATION_CHANGE_PER_SEC) * dt;
             if (dist <= maxStep) {
                 cmdRight = targetRight;
                 cmdForward = targetForward;
@@ -200,16 +241,18 @@ public class IamYouLogic {
                 cmdRight   += dx / dist * maxStep;
                 cmdForward += dy / dist * maxStep;
             }
-            double twistStep = MAX_TWIST_CHANGE_PER_SEC * dt;
+            boolean twistShrinking = Math.abs(targetTwist) < Math.abs(cmdTwist);
+            double twistStep = (twistShrinking ? MAX_TWIST_DECEL_PER_SEC : MAX_TWIST_CHANGE_PER_SEC) * dt;
             cmdTwist += Math.max(-twistStep, Math.min(twistStep, targetTwist - cmdTwist));
         }
 
         // ================= FIELD-CENTRIC ROTATION =================
         // Step 1: driver position rotates the stick into field space (CCW by offset).
         // Step 2: robot heading rotates field space into robot space (CW by heading).
-        // Both are rotations, so they combine into one angle.
-        double headingRad = Math.toRadians(params.headingDegrees);
-        double angle = Math.toRadians(params.driverPosition.offsetDegrees) - headingRad;
+        // Both are rotations, so they combine into one angle. Robot-centric mode skips both.
+        double headingRad = Math.toRadians(headingDeg);
+        double angle = params.robotCentric ? 0.0
+                : Math.toRadians(params.driverPosition.offsetDegrees) - headingRad;
         double cos = Math.cos(angle);
         double sin = Math.sin(angle);
 
@@ -217,7 +260,7 @@ public class IamYouLogic {
         double robotForward = cmdRight * sin + cmdForward * cos;
 
         // ================= SLOW MODE =================
-        boolean slow = params.leftTrigger > SLOW_MODE_TRIGGER_THRESH;
+        boolean slow = finite(params.leftTrigger, 0.0) > SLOW_MODE_TRIGGER_THRESH;
         double driveMult = slow ? SLOW_MODE_DRIVE_MULT : 1.0;
         double twistMult = slow ? SLOW_MODE_TWIST_MULT : 1.0;
 
@@ -225,30 +268,38 @@ public class IamYouLogic {
         double s = robotRight * STRAFE_COMPENSATION * driveMult;
         double t = cmdTwist * twistMult;
 
-        ChassisMotors powers;
+        double[] out = new double[4];
         if (braking) {
-            double[] vel = {params.flVelocity, params.frVelocity, params.blVelocity, params.brVelocity};
+            // ================= STOP ASSIST =================
+            // Briefly pushes each wheel against the direction it was driven, to kill momentum fast.
+            // Why this cannot run away: the push direction comes from OUR last command, not from the encoder's sign,
+            // so a wrongly-signed encoder can only cancel the assist, never feed it. It also ends per wheel the
+            // moment that wheel stops or reverses, and ends for everything after BRAKE_MAX_SEC no matter what.
+            double[] vel = {finite(params.flVelocity, 0.0), finite(params.frVelocity, 0.0),
+                    finite(params.blVelocity, 0.0), finite(params.brVelocity, 0.0)};
             if (!wasBraking) {
-                // Remember which way each wheel was moving when braking began.
+                brakeSeconds = 0.0;
                 for (int k = 0; k < 4; k++) {
-                    double speed = vel[k] / MAX_WHEEL_TICKS_PER_SEC;
-                    brakeDone[k] = Math.abs(speed) < BRAKE_MIN_SPEED;
-                    brakeDirection[k] = brakeDone[k] ? 0 : (speed > 0 ? 1 : -1);
+                    brakeDone[k] = driveSign[k] == 0;
                 }
             }
-            double[] p = new double[4];
+            brakeSeconds += dt;
+            if (brakeSeconds > BRAKE_MAX_SEC) {
+                for (int k = 0; k < 4; k++) {
+                    brakeDone[k] = true;
+                    driveSign[k] = 0;
+                }
+            }
             for (int k = 0; k < 4; k++) {
                 if (brakeDone[k]) continue;
-                double speed = vel[k] / MAX_WHEEL_TICKS_PER_SEC;
-                // Brake only while the wheel is still moving the way it was. Once it slows to a stop or crosses
-                // zero, stop braking for good: pushing a wheel backwards through zero is what causes shaking.
-                if (Math.abs(speed) < BRAKE_MIN_SPEED || (speed > 0 ? 1 : -1) != brakeDirection[k]) {
+                double along = vel[k] / MAX_WHEEL_TICKS_PER_SEC * driveSign[k];   // + = still moving the way we drove it
+                if (along <= BRAKE_MIN_SPEED) {
                     brakeDone[k] = true;
+                    driveSign[k] = 0;
                 } else {
-                    p[k] = -Math.max(-BRAKE_MAX_POWER, Math.min(BRAKE_MAX_POWER, BRAKE_GAIN * speed));
+                    out[k] = -driveSign[k] * Math.min(BRAKE_MAX_POWER, BRAKE_GAIN * along);
                 }
             }
-            powers = new ChassisMotors(p[0], p[1], p[2], p[3]);
         } else {
             // ================= MECANUM MIXER (positive t = clockwise) =================
             double fl = frictionBoost(d + s + t);
@@ -260,12 +311,31 @@ public class IamYouLogic {
             double max = Math.max(1.0,
                     Math.max(Math.max(Math.abs(fl), Math.abs(fr)),
                             Math.max(Math.abs(bl), Math.abs(br))));
-            powers = new ChassisMotors(fl / max, fr / max, bl / max, br / max);
+            out[0] = fl / max;
+            out[1] = fr / max;
+            out[2] = bl / max;
+            out[3] = br / max;
+            for (int k = 0; k < 4; k++) {
+                if (Math.abs(out[k]) >= BRAKE_DRIVE_THRESHOLD) {
+                    driveSign[k] = out[k] > 0 ? 1 : -1;
+                }
+            }
         }
         wasBraking = braking;
 
+        for (int k = 0; k < 4; k++) {
+            out[k] = Math.max(-1.0, Math.min(1.0, finite(out[k], 0.0)));
+            lastOut[k] = out[k];
+        }
+        ChassisMotors powers = new ChassisMotors(out[0], out[1], out[2], out[3]);
+
         return new DriveResult(powers, headingRad, cmdForward, cmdRight,
                 robotForward, robotRight, cmdTwist, slow, braking);
+    }
+
+    /** Returns the value, or the fallback if it is NaN or infinite. */
+    private static double finite(double v, double fallback) {
+        return (Double.isNaN(v) || Double.isInfinite(v)) ? fallback : v;
     }
 
     /** Adds the static-friction push in the command's direction; continuous through zero. */

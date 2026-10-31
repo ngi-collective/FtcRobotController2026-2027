@@ -11,8 +11,11 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
+import org.firstinspires.ftc.vision.VisionPortal;
+import android.util.Size;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +35,11 @@ import java.util.List;
  *   Left stick .......... drive (field-centric)
  *   Right stick X ....... turn
  *   Left trigger ........ slow mode
+ *   Right trigger ....... intake (hold; harder pull = faster)
+ *   Right bumper ........ eject (hold; wins over the trigger)
+ *   Left bumper ......... pollen lock (press to turn ON/OFF). While ON the robot turns to face the yellow pollen
+ *                         (the middle of the group if there are several) and the left stick drives ROBOT-relative,
+ *                         so pushing forward drives straight into it. Moving the right stick overrides the aim.
  *   D-pad ............... where the driver is standing (Up=N Down=S Left=W Right=E)
  *   Options ............. re-zero heading (robot's current front becomes NORTH)
  *
