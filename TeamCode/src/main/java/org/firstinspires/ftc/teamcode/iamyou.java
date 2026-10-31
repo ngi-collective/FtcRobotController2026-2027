@@ -8,7 +8,11 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.vision.VisionPortal;
+
+import android.util.Size;
 
 import java.util.List;
 
@@ -19,6 +23,9 @@ import java.util.List;
  *   Left trigger ........ slow mode
  *   Right trigger ....... intake (hold; harder pull = faster)
  *   Right bumper ........ eject (hold; wins over the trigger)
+ *   Left bumper ......... pollen lock (press to turn ON/OFF). While ON the robot turns to face the yellow pollen
+ *                         (the middle of the group if there are several) and the left stick drives ROBOT-relative,
+ *                         so pushing forward drives straight into it. Moving the right stick overrides the aim.
  *   D-pad ............... where the driver is standing (Up=N Down=S Left=W Right=E)
  *   Options ............. re-zero heading (robot's current front becomes NORTH)
  */
@@ -27,6 +34,7 @@ public class iamyou extends LinearOpMode {
 
     private final IamYouLogic logic = new IamYouLogic();
     private final IntakeLogic intakeLogic = new IntakeLogic();
+    private final PollenTracker pollenTracker = new PollenTracker();
 
     /** How often to read the intake motor's current (each read is a separate hub command, so don't do it every loop). */
     private static final double INTAKE_CURRENT_READ_SEC = 0.10;
@@ -62,6 +70,27 @@ public class iamyou extends LinearOpMode {
         }
         IntakeHardware intake = IntakeHardware.init(hardwareMap);
 
+        // ================= CAMERA (pollen tracking) =================
+        // Low resolution on purpose: the detector only needs a few pixels per ball, and 320x240 costs a quarter of
+        // 640x480, so the camera thread does not slow the drive loop. The processor only runs while the lock is ON.
+        BallDetectorProcessor pollenProcessor = new BallDetectorProcessor();
+        VisionPortal portal = null;
+        String cameraStatus = "ready";
+        try {
+            portal = new VisionPortal.Builder()
+                    .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
+                    .setCameraResolution(new Size(320, 240))
+                    .addProcessor(pollenProcessor)
+                    .build();
+            portal.setProcessorEnabled(pollenProcessor, false);
+        } catch (Exception e) {
+            // A missing or unplugged camera must not stop the robot from driving.
+            cameraStatus = "UNAVAILABLE (" + e.getClass().getSimpleName() + ")";
+        }
+        boolean pollenLock = false;
+        boolean lastLeftBumper = false;
+        java.util.List<BallDetector.Detection> lastFrame = null;
+
         IamYouLogic.DriverPosition driverPosition = IamYouLogic.DriverPosition.SOUTH;
 
         // ================= PRE-START =================
@@ -69,6 +98,7 @@ public class iamyou extends LinearOpMode {
             driverPosition = readDriverPosition(driverPosition);
 
             telemetry.addData("Status", "Initialized - waiting for start");
+            telemetry.addData("Camera (Webcam 1)", cameraStatus);
             telemetry.addData("Driver Position", driverPosition + "  (D-pad: Up=N Down=S Left=W Right=E)");
             telemetry.addData("Note", "Whatever direction the robot faces at START becomes NORTH");
             telemetry.update();
@@ -80,7 +110,9 @@ public class iamyou extends LinearOpMode {
         imu.resetYaw();
 
         ElapsedTime loopTimer = new ElapsedTime();
+        ElapsedTime loopClock = new ElapsedTime();
         ElapsedTime currentTimer = new ElapsedTime();
+        telemetry.setMsTransmissionInterval(100);
         double lastIntakePower = 0.0;
         double intakeAmps = 0.0;
 
@@ -102,6 +134,29 @@ public class iamyou extends LinearOpMode {
             double heading = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
             driverPosition = readDriverPosition(driverPosition);
 
+            // ---- Pollen lock (left bumper toggles) ----
+            boolean leftBumper = gamepad1.left_bumper;
+            if (leftBumper && !lastLeftBumper && portal != null) {
+                pollenLock = !pollenLock;
+                portal.setProcessorEnabled(pollenProcessor, pollenLock);
+                pollenTracker.reset();
+                lastFrame = null;
+            }
+            lastLeftBumper = leftBumper;
+
+            double autoTwist = Double.NaN;
+            PollenTracker.Output aim = null;
+            if (pollenLock) {
+                // A new camera frame shows up as a new list object (the processor assigns one per frame).
+                java.util.List<BallDetector.Detection> frame = pollenProcessor.getDetections();
+                boolean newFrame = frame != lastFrame;
+                lastFrame = frame;
+                aim = pollenTracker.update(loopClock.seconds(), heading, newFrame, frame);
+                if (aim.hasTarget) {
+                    autoTwist = aim.twist;
+                }
+            }
+
             // ---- Drive ----
             IamYouLogic.DriveParameters params = new IamYouLogic.DriveParameters(
                     gamepad1.left_stick_x,
@@ -114,7 +169,9 @@ public class iamyou extends LinearOpMode {
                     drive.fr.getVelocity(),
                     drive.bl.getVelocity(),
                     drive.br.getVelocity(),
-                    dt
+                    dt,
+                    autoTwist,
+                    pollenLock
             );
 
             IamYouLogic.DriveResult result = logic.calculate(params);
@@ -141,6 +198,10 @@ public class iamyou extends LinearOpMode {
             telemetry.addData("Driver Position",    driverPosition + "  (D-pad to change)");
             telemetry.addData("Heading (deg)",      "%.1f", heading);
             telemetry.addData("Slow Mode",          result.slowMode ? "ON" : "OFF");
+            telemetry.addData("Pollen Lock", !pollenLock ? "OFF"
+                    : aim != null && aim.hasTarget
+                      ? String.format("LOCKED on %d pollen, error %.1f deg", aim.groupSize, aim.errorDegrees)
+                      : "ON - searching (camera " + cameraStatus + ")");
             telemetry.addData("Stop Assist",        result.braking ? "BRAKING" : "off");
             telemetry.addData("Intake",             "%s  power %.2f  %.1f A",
                     intakeResult.state, intakeResult.power, intakeAmps);
@@ -157,6 +218,9 @@ public class iamyou extends LinearOpMode {
 
         drive.stop();
         intake.stop();
+        if (portal != null) {
+            portal.close();
+        }
     }
 
     private IamYouLogic.DriverPosition readDriverPosition(IamYouLogic.DriverPosition current) {
