@@ -83,8 +83,9 @@ public class iamyou extends LinearOpMode {
                     .addProcessor(pollenProcessor)
                     .build();
             portal.setProcessorEnabled(pollenProcessor, false);
-        } catch (Exception e) {
-            // A missing or unplugged camera must not stop the robot from driving.
+        } catch (Exception | LinkageError e) {
+            // A missing or unplugged camera must not stop the robot from driving. LinkageError covers a
+            // VisionPortal that cannot load at all, which is what a plain-JVM test sees.
             cameraStatus = "UNAVAILABLE (" + e.getClass().getSimpleName() + ")";
         }
         boolean pollenLock = false;
