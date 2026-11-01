@@ -190,6 +190,10 @@ public class VerityRobot implements SimulatedRobot {
             builder.addMotor(motor, MotorBehaviors.ramping(launcher.spinUpSeconds()));
         }
 
+        if (config.pinpoint() != null) {
+            builder.addPinpoint(config.pinpoint());
+        }
+
         // Servos and sensors come from the same file, under the names an OpMode looks them up by.
         // Declared here and wired to the field by MechanismModel, which refuses to build if the
         // two ever disagree -- a sensor the configuration describes and the robot does not have

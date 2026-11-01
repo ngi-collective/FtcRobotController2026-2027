@@ -1,7 +1,7 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.pedropathing.follower.Follower;
-import com.pedropathing.geometry.Pose;
+import com.pedropathing.math.Pose;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
 import org.junit.jupiter.api.Test;
@@ -68,8 +68,8 @@ class PickupLoopTest {
                     }
                 });
         Follower follower = Constants.createFollower(hardware);
-        follower.setStartingPose(new Pose(0.0, 0.0, 0.0));
-        follower.update();
+        follower.setPose(new Pose(0.0, 0.0, 0.0));
+        follower.update(TICK);
 
         SyntheticFrame frame = new SyntheticFrame(LENS.width(), LENS.height());
         for (int tick = 0; tick < 800 && !world.elements().isEmpty(); tick++) {
@@ -82,7 +82,7 @@ class PickupLoopTest {
             if (target != null) {
                 chase(follower, target);
             }
-            follower.update();
+            follower.update(TICK);
             hardware.advance(TICK);
         }
 
@@ -93,14 +93,14 @@ class PickupLoopTest {
     /** The same re-aiming {@link PickupAuto#chase} does: a fresh sighting each tick. */
     private void chase(Follower follower, BallDetector.Detection target) {
         LensMount.Sighting sighting = BallDetector.toSighting(target, MOUNT);
-        Pose here = follower.getPose();
-        double heading = here.getHeading();
-        double xMetres = here.getX() / INCHES_PER_METRE;
-        double yMetres = here.getY() / INCHES_PER_METRE;
+        Pose here = follower.pose();
+        double heading = here.heading();
+        double xMetres = here.x() / INCHES_PER_METRE;
+        double yMetres = here.y() / INCHES_PER_METRE;
         double targetHeading = heading + Math.atan2(sighting.leftMetres(), sighting.forwardMetres());
         double targetX = xMetres + sighting.forwardMetres() * Math.cos(targetHeading);
         double targetY = yMetres + sighting.forwardMetres() * Math.sin(targetHeading);
-        follower.holdPoint(new Pose(targetX * INCHES_PER_METRE, targetY * INCHES_PER_METRE,
+        follower.hold(new Pose(targetX * INCHES_PER_METRE, targetY * INCHES_PER_METRE,
                 targetHeading));
     }
 }
