@@ -163,7 +163,8 @@ class IamYouHeadlessTest {
     void strafesWhenTheStickGoesSideways() {
         start(new iamyou());
 
-        harness.gamepad1().left_stick_x = 1.0f;
+        launchAndStart();
+        double slow = drive(0.0, -1.0, 1.0f, 0.5).x();
 
         // A right strafe is the mecanum X pattern: the diagonals oppose each other. Strafe
         // compensation pushes it past full power, so the mixer scales every wheel back to 1.
@@ -174,8 +175,7 @@ class IamYouHeadlessTest {
     void slowModeScalesEveryWheelDown() {
         start(new iamyou());
 
-        harness.gamepad1().left_stick_y = -1.0f;
-        harness.gamepad1().left_trigger = 1.0f;
+        Pose2d pose = drive(0.0, -1.0, 0.0f, 0.5);
 
         double slow = iamyou.TRANSLATION_SPEED_CAP * iamyou.SLOW_MODE_DRIVE_MULT + iamyou.STATIC_FRICTION_POWER;
         awaitWheelPowers(slow, slow, slow, slow);
@@ -314,14 +314,17 @@ class IamYouHeadlessTest {
     }
 
     /**
-     * Waits until the OpMode is spinning in its init loop.
+     * Presses START and waits for the main loop.
      *
      * <p>Anchored on the init loop's own line rather than a one-shot frame: polling the latest
      * frame for something the loop immediately overwrites is a race.</p>
      */
-    private void awaitInitLoop() {
-        await(() -> harness.lastTelemetry().contains("Status : Initialized - waiting for start"),
-                () -> "the OpMode never reached its init loop; last telemetry was "
+    private void launchAndStart() {
+        launch();
+        harness.pressStart();
+        await(() -> harness.lastTelemetry().stream()
+                        .anyMatch(line -> line.startsWith("Facing (vs start) : ")),
+                () -> "the OpMode never reached its main loop; last telemetry was "
                         + harness.lastTelemetry());
     }
 
