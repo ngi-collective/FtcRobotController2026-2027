@@ -53,9 +53,9 @@ class IamYouHeadlessTest {
                     hardware.motor(wheel).getZeroPowerBehavior(), wheel);
         }
         assertEquals(DcMotor.RunMode.RUN_WITHOUT_ENCODER,
-                hardware.motor(IntakeHardware.NAME).getMode());
+                hardware.motor(iamyou.INTAKE_NAME).getMode());
         assertEquals(DcMotor.ZeroPowerBehavior.BRAKE,
-                hardware.motor(IntakeHardware.NAME).getZeroPowerBehavior());
+                hardware.motor(iamyou.INTAKE_NAME).getZeroPowerBehavior());
         // A line, not the whole frame: the position is followed by the D-pad legend.
         await(() -> harness.lastTelemetry().stream()
                         .anyMatch(line -> line.startsWith("Driver Position : SOUTH")),
@@ -128,11 +128,11 @@ class IamYouHeadlessTest {
         launchAndStart();
 
         harness.gamepad1().right_trigger = 1.0f;
-        awaitIntakePower(IntakeLogic.INTAKE_POWER);
+        awaitIntakePower(iamyou.INTAKE_POWER);
 
         // Eject wins over a held trigger.
         harness.gamepad1().right_bumper = true;
-        awaitIntakePower(-IntakeLogic.EJECT_POWER);
+        awaitIntakePower(-iamyou.EJECT_POWER);
 
         harness.gamepad1().right_bumper = false;
         harness.gamepad1().right_trigger = 0.0f;
@@ -145,7 +145,7 @@ class IamYouHeadlessTest {
         harness.gamepad1().left_stick_y = -1.0f;
         harness.gamepad1().right_trigger = 1.0f;
         awaitSteadyWheelPowers();
-        awaitIntakePower(IntakeLogic.INTAKE_POWER);
+        awaitIntakePower(iamyou.INTAKE_POWER);
 
         harness.pressStop();
         harness.awaitCompletion(2000);
@@ -153,7 +153,7 @@ class IamYouHeadlessTest {
         for (String wheel : WHEELS) {
             assertEquals(0.0, hardware.motor(wheel).getPower(), 1e-9, wheel);
         }
-        assertEquals(0.0, hardware.motor(IntakeHardware.NAME).getPower(), 1e-9);
+        assertEquals(0.0, hardware.motor(iamyou.INTAKE_NAME).getPower(), 1e-9);
     }
 
     /** A fresh robot at the origin facing +X, its OpMode spinning in the init loop. */
@@ -231,9 +231,9 @@ class IamYouHeadlessTest {
     }
 
     private void awaitIntakePower(double expected) {
-        await(() -> Math.abs(hardware.motor(IntakeHardware.NAME).getPower() - expected) < 1e-9,
+        await(() -> Math.abs(hardware.motor(iamyou.INTAKE_NAME).getPower() - expected) < 1e-9,
                 () -> "the intake never reached " + expected + "; it was "
-                        + hardware.motor(IntakeHardware.NAME).getPower());
+                        + hardware.motor(iamyou.INTAKE_NAME).getPower());
     }
 
     private double yaw() {

@@ -6,18 +6,27 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 
+import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.VoltageUnit;
+
+
 @TeleOp(name = "Two Controller TeleOp", group = "Linear OpMode")
 public class TwoControllerBasicTeleOp extends LinearOpMode {
 
+
     private final MecanumMovement movement = new MecanumMovement();
+
 
     @Override
     public void runOpMode() {
 
+
         DriveHardware drive = DriveHardware.initWithEncoders(hardwareMap);
+
 
         JoystickInput leftStick = new JoystickInput();
         JoystickInput rightStick = new JoystickInput();
+
 
         DcMotorEx intake = hardwareMap.get(DcMotorEx.class, "INTAKE");
         intake.setDirection(DcMotorSimple.Direction.FORWARD);
@@ -27,19 +36,25 @@ public class TwoControllerBasicTeleOp extends LinearOpMode {
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         outtake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
+
         telemetry.addData("Status", "Initialized");
         telemetry.update();
 
+
         waitForStart();
 
+
         while (opModeIsActive()) {
+
 
             // Real stick Y is negative when pushed forward; MecanumMovement's
             // algorithm treats positive Y as forward, so negate it here.
             leftStick.update(gamepad1.left_stick_x, -gamepad1.left_stick_y);
             rightStick.update(gamepad1.right_stick_x, gamepad1.right_stick_y);
 
+
             ChassisMotors powers = movement.calculate(leftStick, rightStick);
+
 
             //intake power
             if (gamepad2.right_bumper){
@@ -66,8 +81,10 @@ public class TwoControllerBasicTeleOp extends LinearOpMode {
             telemetry.addData("Outtake velocity", outtake.getVelocity());
             telemetry.addData("Outtake mode", outtake.getMode());
             telemetry.addData("Trigger", gamepad2.right_trigger);
+            telemetry.addData("Outtake Ampage", outtake.getCurrent(CurrentUnit.AMPS));
             telemetry.update();
         }
+
 
         drive.stop();
     }
