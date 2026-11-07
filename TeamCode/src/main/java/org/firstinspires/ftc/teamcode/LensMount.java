@@ -53,7 +53,7 @@ public final class LensMount {
     private final double[] upAxis;
 
     private LensMount(double forwardMetres, double leftMetres, double heightMetres,
-                        double yawRadians, double pitchRadians, double rollRadians) {
+                      double yawRadians, double pitchRadians, double rollRadians) {
         this.forwardMetres = forwardMetres;
         this.leftMetres = leftMetres;
         this.heightMetres = heightMetres;
@@ -91,7 +91,7 @@ public final class LensMount {
      * @param rollDegrees how far the image is turned about the lens
      */
     public static LensMount of(double forwardMetres, double leftMetres, double heightMetres,
-                                 double yawDegrees, double pitchDegrees, double rollDegrees) {
+                               double yawDegrees, double pitchDegrees, double rollDegrees) {
         return new LensMount(forwardMetres, leftMetres, heightMetres,
                 Math.toRadians(yawDegrees), Math.toRadians(pitchDegrees),
                 Math.toRadians(rollDegrees));

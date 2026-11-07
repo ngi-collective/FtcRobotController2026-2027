@@ -5,7 +5,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
-import org.firstinspires.ftc.teamcode.ConceptAprilTagEasy;
+import org.firstinspires.ftc.robotcontroller.external.samples.ConceptAprilTagEasy;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.junit.Test;
 import org.junit.runner.RunWith;

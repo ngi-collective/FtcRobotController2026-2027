@@ -11,7 +11,9 @@ import org.ngicollective.ftcsim.sim.Pose2d;
 
 /**
  * Where the robot actually ends up for a given stick input, driven through the real
- * {@link BasicMecanumTeleOp} against the simulated drivetrain.
+ * {@link FieldRelativeMecanumTeleOp}, in its robot-relative mode (left bumper held), against the
+ * simulated drivetrain. Robot-relative is plain mecanum mixing with no smoothing or speed cap, so
+ * a full stick is full power and the bounds below are the drivetrain's own.
  *
  * <p>These assert displacement rather than wheel powers on purpose. A test that pins
  * {@code fl == +1 && fr == -1} passes happily when two motors are swapped or a mounting sign is
@@ -53,9 +55,10 @@ class MecanumDrivePoseTest {
 
     private void stick(double leftX, double leftY, double rightX) {
         hardware = new VerityRobot().create();
-        harness = OpModeHarness.forLinear(new BasicMecanumTeleOp(), hardware);
+        harness = OpModeHarness.forLinear(new FieldRelativeMecanumTeleOp(), hardware);
         harness.launch();
         harness.pressStart();
+        harness.gamepad1().left_bumper = true;
         harness.gamepad1().left_stick_x = (float) leftX;
         harness.gamepad1().left_stick_y = (float) leftY;
         harness.gamepad1().right_stick_x = (float) rightX;
