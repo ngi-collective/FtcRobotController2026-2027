@@ -385,6 +385,7 @@ public class iamyou extends LinearOpMode {
                 double rightServo = servoSpeed * RIGHT_SERVO_TRIM * (intaking ? RIGHT_SERVO_INTAKE_DIR : RIGHT_SERVO_OUTTAKE_DIR);
                 intakeServoLeft.setPower(leftServo);
                 intakeServoRight.setPower(rightServo);
+
                 // Staging feeds forward on intake and backward on outtake, with the intake motor.
                 double stagingPower = Math.max(-1.0, Math.min(1.0, intakeResult.power));
                 staging.setPower(intake.getPower());
@@ -993,7 +994,7 @@ public class iamyou extends LinearOpMode {
     // =====================================================================================================
 
     /** Flywheel power while ON. Half power for now; velocity PID will replace this. */
-    static final double OUTTAKE_POWER         = 0.51;
+    static final double OUTTAKE_POWER         = 0.49;
     /** Spin-up limit in power-per-second. 4.0 = 0 to full in a quarter second. */
     static final double OUTTAKE_RAMP_PER_SEC  = 4.0;
 
