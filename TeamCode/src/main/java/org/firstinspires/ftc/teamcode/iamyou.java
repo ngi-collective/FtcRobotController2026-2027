@@ -390,10 +390,12 @@ public class iamyou extends LinearOpMode {
                 double stagingPower = Math.max(-1.0, Math.min(1.0, intakeResult.power));
 
                 //seperate staging from intake (because why not????)
-                if (gamepad1.a){
+                if (mech.a){
                     staging.setPower(1.0);
-                }else if (gamepad1.b){
+                }else if (mech.b){
                     staging.setPower(-1.0);
+                }else{
+                    staging.setPower(0.0);
                 }
 
                 lastIntakePower = intakeResult.power;
