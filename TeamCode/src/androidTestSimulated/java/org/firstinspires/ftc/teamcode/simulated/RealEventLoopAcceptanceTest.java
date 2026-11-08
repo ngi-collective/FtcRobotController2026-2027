@@ -67,7 +67,7 @@ public class RealEventLoopAcceptanceTest {
         FakeWebcam webcam = hardware.webcam("Webcam 1");
         assertFalse("nothing should stream before an OpMode runs", webcam.state().isStreaming());
 
-        // Beneath the red HIVE, facing across the field so the up-pitched camera sees the tags.
+        // Half a metre short of the red HIVE's raised CELL, so the upward camera sees its tags.
         hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(90.0)));
 
         // The name the @TeleOp annotation gives it, which is what a Driver Station would send.

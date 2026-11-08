@@ -5,6 +5,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import org.firstinspires.ftc.teamcode.AimedLauncherTeleOp;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.ngicollective.ftcsim.app.PlainJvmVision;
@@ -114,6 +115,10 @@ public class AimedLauncherAcceptanceTest {
                 + BioBuzzElements.POLLEN_DIAMETER_METRES / 2.0;
     }
 
+    @Ignore("The camera now points straight up and sees a CELL only from about half a metre short"
+            + " of it, inside the launcher's minimum range, so there is no spot this robot can"
+            + " both range from and shoot from. Re-enable once the mount or the launch angle"
+            + " gives the two an overlap; CellAimerAcceptanceTest covers the aiming meanwhile.")
     @Test
     public void theRobotRangesOffAClusterAndTipsTheHiveItWasAimingAt() throws Exception {
         PlainJvmVision.start();
@@ -144,7 +149,7 @@ public class AimedLauncherAcceptanceTest {
 
         // What the camera worked out, against what the scene was built from. This is the whole
         // chain in one assertion: the renderer's geometry, the detector's solve, the camera's
-        // 35-degree tilt taken back out, and the muzzle's own reach ahead of the chassis.
+        // mount's rotation taken back out, and the muzzle's own reach ahead of the chassis.
         Matcher range = find(aimed, RANGE);
         double reportedDistance = Double.parseDouble(range.group(1));
         double reportedHeight = Double.parseDouble(range.group(2));

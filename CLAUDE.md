@@ -118,9 +118,15 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit, as
   member offsets, FIRST's CAD and the manual's CELL dimensions agree there and none of them
   mentions the others.
 - **Never use `ftcPose.range`, `bearing` or `elevation` on this robot.** They are measured in the
-  camera's own frame — `range` is `hypot(x, y)` with the vertical dropped — and the camera aims up
-  35°, so all three are wrong about the field by a plausible-looking amount. Use `x`, `y`, `z` and
-  level them through the mount.
+  camera's own frame — `range` is `hypot(x, y)` with the vertical dropped — and the camera points
+  straight up (12.5 in off the tiles, image top toward the robot's left), so all three describe
+  the ceiling rather than the field. Use `x`, `y`, `z` and level them through the mount.
+- **The upward camera can aim but cannot shoot.** It sees a raised CELL's cluster only from about
+  0.5 m short of it and closer, and the 75° lob needs the muzzle 0.39 m back, which is 0.63 m
+  from the robot's centre: the two never overlap. `CellAimer` turns the robot onto the CELL from
+  inside that band (`CellAimerAcceptanceTest`); `AimedLauncherAcceptanceTest` is `@Ignore`d until
+  the mount or the launch angle gives an overlap. The image-top direction is assumed, not
+  checked on the robot: if `CellAimer` turns away from the CELL, that is the first suspect.
 - **`robotPose` is useless this season.** The SDK declares all four BioBuzz clusters at
   `fieldPosition = (0,0,0)` with an identity orientation, so anything absolute must be built from
   relative measurements.

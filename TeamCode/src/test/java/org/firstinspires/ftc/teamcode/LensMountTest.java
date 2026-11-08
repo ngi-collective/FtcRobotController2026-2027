@@ -13,7 +13,8 @@ import org.junit.jupiter.api.Test;
  */
 class LensMountTest {
 
-    /** Verity's own mount: on the nose, a hand's width up, aimed 35 degrees above level. */
+    /** On the nose, a hand's width up, aimed 35 degrees above level: Verity's mount until it was
+     *  turned to point straight up, and still the oblique case worth checking the arithmetic on. */
     private static LensMount verity() {
         return LensMount.of(0.16, 0.0, 0.105, 0.0, 35.0, 0.0);
     }

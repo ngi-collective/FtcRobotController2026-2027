@@ -21,12 +21,19 @@ package org.firstinspires.ftc.teamcode;
  */
 public final class LaunchGeometry {
 
-    /** Measured on the robot: the lens is on the front face of the chassis, aimed up at the HIVE. */
+    /**
+     * Measured on the robot: the lens is on the front of the chassis, 12.5&nbsp;in up, pointing
+     * straight up at the undersides of the CELLs.
+     *
+     * <p>Pointing straight up, yaw is the way the top edge of the image faces: &minus;90&deg; is
+     * toward the robot's left. That one is assumed rather than checked on the robot; get it wrong
+     * and every turn toward a CELL is a turn away from it.</p>
+     */
     private static final double CAMERA_FORWARD_METRES = 0.16;
     private static final double CAMERA_LEFT_METRES = 0.0;
-    private static final double CAMERA_HEIGHT_METRES = 0.105;
-    private static final double CAMERA_YAW_DEGREES = 0.0;
-    private static final double CAMERA_PITCH_DEGREES = 35.0;
+    private static final double CAMERA_HEIGHT_METRES = 0.3175;
+    private static final double CAMERA_YAW_DEGREES = -90.0;
+    private static final double CAMERA_PITCH_DEGREES = 90.0;
     private static final double CAMERA_ROLL_DEGREES = 0.0;
 
     /**
