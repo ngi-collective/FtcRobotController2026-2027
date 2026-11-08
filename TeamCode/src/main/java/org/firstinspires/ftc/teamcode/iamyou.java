@@ -413,8 +413,8 @@ public class iamyou extends LinearOpMode {
                 telemetry.addData("Intake",             "%s  power %.2f  %.1f A",
                         intakeResult.state, intakeResult.power, intakeAmps);
                 telemetry.addData("Intake Servos L | R", "%.2f | %.2f", leftServo, rightServo);
-                telemetry.addData("Staging",            "%.2f", stagingPower);
-                telemetry.addData("Flywheel",           "%s  power %.2f  %.0f ticks/s",
+                telemetry.addData("Staging",            "%.2f", staging.getPower());
+                telemetry.addData("Flywheel",           "%s  power %.2f  %.0f ticks/s %s velocity",
                         outtakeLogic.isOn() ? "ON" : "OFF", outtakePower, flywheelTicksPerSec, outtake.getVelocity());
                 telemetry.addData("Aim", aimStatus(aimer, aim, outtakeLogic.isOn()));
                 telemetry.addData("---", "---");
@@ -483,6 +483,37 @@ public class iamyou extends LinearOpMode {
             return imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
         }
         return 0.0;
+    }
+
+    /**
+     * Adds a counter-clockwise turn to FL, FR, BL, BR wheel powers, scaled down together if any wheel would pass full
+     * power so the drive direction is kept.
+     */
+    static double[] addTurn(double[] powers, double turn) {
+        double[] out = {powers[0] - turn, powers[1] + turn, powers[2] - turn, powers[3] + turn};
+        double max = 1.0;
+        for (double p : out) {
+            max = Math.max(max, Math.abs(p));
+        }
+        for (int k = 0; k < 4; k++) {
+            out[k] /= max;
+        }
+        return out;
+    }
+
+    /** One telemetry line saying what the aimer is doing, or why it is not. */
+    private static String aimStatus(CellAimer aimer, CellAimer.Aim aim, boolean flywheelOn) {
+        if (aimer == null) {
+            return "off (no camera or no alliance picked before START)";
+        }
+        if (!flywheelOn) {
+            return "waiting for flywheel";
+        }
+        if (aim == null || !aim.hasTarget()) {
+            return "no CELL in view";
+        }
+        return String.format("%s  %.1f deg off  %.2f m",
+                aim.settled() ? "ON TARGET" : "turning", Math.toDegrees(aim.errorRadians()), aim.rangeMetres());
     }
 
     /** Adds "name (type)" to missing if the configuration has no device of that type under that name. */
