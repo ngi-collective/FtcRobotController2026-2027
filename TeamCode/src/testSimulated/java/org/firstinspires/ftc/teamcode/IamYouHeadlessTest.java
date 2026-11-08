@@ -2,13 +2,17 @@ package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
+import org.junit.After;
+import org.junit.Test;
+import org.junit.runner.RunWith;
 import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
+import org.ngicollective.ftcsim.app.PlainJvmVision;
 import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
 import org.ngicollective.ftcsim.harness.LinearOpModeHarness;
 import org.ngicollective.ftcsim.harness.OpModeHarness;
 import org.ngicollective.ftcsim.sim.Pose2d;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,7 +28,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * friction-boosts every command, so the powers are tuning; where the robot goes is the
  * behaviour. {@link IamYouLogicTest} owns the numbers.</p>
  */
-class IamYouHeadlessTest {
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk = 28)
+public class IamYouHeadlessTest {
 
     private static final String[] WHEELS = {"FL", "FR", "BL", "BR"};
     private static final double TICK = 0.02;
@@ -32,8 +38,8 @@ class IamYouHeadlessTest {
     private FakeHardwareMap hardware;
     private LinearOpModeHarness harness;
 
-    @AfterEach
-    void tearDown() {
+    @After
+    public void tearDown() {
         if (harness != null) {
             harness.pressStop();
             harness.awaitCompletion(2000);
@@ -41,7 +47,7 @@ class IamYouHeadlessTest {
     }
 
     @Test
-    void initializesTheImuTheDriveMotorsAndTheIntakeBeforeStart() {
+    public void initializesTheImuTheDriveMotorsAndTheIntakeBeforeStart() {
         launch();
 
         assertTrue(hardware.imu("imu").isInitialized(), "the OpMode must initialize the IMU");
@@ -64,7 +70,7 @@ class IamYouHeadlessTest {
     }
 
     @Test
-    void forwardStickDrivesTheWayTheRobotFacedAtStart() {
+    public void forwardStickDrivesTheWayTheRobotFacedAtStart() {
         launchAndStart();
         Pose2d pose = drive(0.0, -1.0, 0.0f, 0.5);
 
@@ -74,7 +80,7 @@ class IamYouHeadlessTest {
     }
 
     @Test
-    void rightStickStrafesTowardTheRobotsRight() {
+    public void rightStickStrafesTowardTheRobotsRight() {
         launchAndStart();
         Pose2d pose = drive(1.0, 0.0, 0.0f, 0.5);
 
@@ -85,7 +91,7 @@ class IamYouHeadlessTest {
     }
 
     @Test
-    void slowModeDrivesWellUnderHalfSpeed() {
+    public void slowModeDrivesWellUnderHalfSpeed() {
         launchAndStart();
         double full = drive(0.0, -1.0, 0.0f, 0.5).x();
         harness.pressStop();
@@ -99,7 +105,7 @@ class IamYouHeadlessTest {
     }
 
     @Test
-    void forwardStickKeepsDrivingDownFieldAfterTheChassisTurns() {
+    public void forwardStickKeepsDrivingDownFieldAfterTheChassisTurns() {
         launchAndStart();
         // A quarter turn left after START: the robot now faces +Y, but NORTH is still +X.
         hardware.drive().setPose(new Pose2d(0.0, 0.0, Math.PI / 2));
@@ -113,7 +119,41 @@ class IamYouHeadlessTest {
     }
 
     @Test
-    void reportsWhichWayTheRobotFacesInTelemetry() {
+    public void withTheFlywheelOnItTurnsOntoThePickedAlliancesRaisedCell() throws InterruptedException {
+        launch();
+        harness.gamepad1().b = true;
+        await(() -> harness.lastTelemetry().stream().anyMatch(line -> line.startsWith("Alliance : RED")),
+                () -> "B before START should pick RED; last telemetry was " + harness.lastTelemetry());
+        harness.gamepad1().b = false;
+        harness.pressStart();
+        await(() -> harness.lastTelemetry().stream().anyMatch(line -> line.startsWith("Aim : ")),
+                () -> "the OpMode never reached its main loop; last telemetry was " + harness.lastTelemetry());
+
+        // Half a metre short of red's raised CELL and fifteen degrees clockwise of it: the upward camera sees the
+        // cluster from here, and only from about here.
+        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(75.0)));
+        harness.gamepad1().left_bumper = true;   // flywheel on: a toggle, so press and let go
+        for (int tick = 0; tick < 500 && !aimSettled(); tick++) {
+            if (tick == 5) {
+                harness.gamepad1().left_bumper = false;
+            }
+            harness.advance(TICK);
+            PlainJvmVision.pump();
+            Thread.sleep(20);
+        }
+
+        assertTrue(aimSettled(), "the aimer never settled; last telemetry was " + harness.lastTelemetry());
+        // Red's raised CELL is at x = -0.324 on the HIVE's centre line, so on target is facing straight down +Y.
+        assertEquals(90.0, hardware.drive().pose().headingDegrees(), CellAimer.READY_DEGREES,
+                "the nose should point at the raised CELL");
+    }
+
+    private boolean aimSettled() {
+        return harness.lastTelemetry().stream().anyMatch(line -> line.startsWith("Aim : ON TARGET"));
+    }
+
+    @Test
+    public void reportsWhichWayTheRobotFacesInTelemetry() {
         launchAndStart();
         hardware.drive().setPose(new Pose2d(0.0, 0.0, -Math.PI / 2));
         harness.advance(TICK);
@@ -124,7 +164,7 @@ class IamYouHeadlessTest {
     }
 
     @Test
-    void triggerRunsTheIntakeInAndBumperEjects() {
+    public void triggerRunsTheIntakeInAndBumperEjects() {
         launchAndStart();
 
         harness.gamepad1().right_trigger = 1.0f;
@@ -140,7 +180,7 @@ class IamYouHeadlessTest {
     }
 
     @Test
-    void stoppingCutsPowerToEveryWheelAndTheIntake() {
+    public void stoppingCutsPowerToEveryWheelAndTheIntake() {
         launchAndStart();
         harness.gamepad1().left_stick_y = -1.0f;
         harness.gamepad1().right_trigger = 1.0f;
@@ -158,6 +198,13 @@ class IamYouHeadlessTest {
 
     /** A fresh robot at the origin facing +X, its OpMode spinning in the init loop. */
     private void launch() {
+        // iamyou opens the webcam to aim with, so the vision natives and the simulated camera have to be in place:
+        // under Robolectric, as every test that builds a VisionPortal is. iamyou closes it again on STOP.
+        try {
+            PlainJvmVision.start();
+        } catch (Exception e) {
+            throw new IllegalStateException("the plain-JVM vision stack would not start", e);
+        }
         hardware = new VerityRobot().create();
         hardware.drive().setPose(Pose2d.ORIGIN);
         harness = OpModeHarness.forLinear(new iamyou(), hardware);

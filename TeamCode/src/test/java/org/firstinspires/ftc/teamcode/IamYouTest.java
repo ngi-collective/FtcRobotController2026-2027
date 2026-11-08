@@ -350,4 +350,18 @@ class IamYouTest {
             assertTrue(Math.abs(w) <= 1.0 + 1e-12);
         }
     }
+
+    @Test
+    void aimTurnIsCounterClockwiseOnTopOfTheDrive() {
+        double[] out = iamyou.addTurn(new double[]{0.2, 0.2, 0.2, 0.2}, 0.1);
+        assertArrayEquals(new double[]{0.1, 0.3, 0.1, 0.3}, out, 1e-12);
+    }
+
+    @Test
+    void aimTurnScalesEveryWheelTogetherRatherThanClipping() {
+        // Full forward plus a turn would push the right wheels past 1; all four shrink by the same factor instead,
+        // so the robot keeps driving the way it was going while it turns.
+        double[] out = iamyou.addTurn(new double[]{1.0, 1.0, 1.0, 1.0}, 0.25);
+        assertArrayEquals(new double[]{0.6, 1.0, 0.6, 1.0}, out, 1e-12);
+    }
 }

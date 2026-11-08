@@ -14,7 +14,9 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.vision.VisionPortal;
+import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import android.util.Size;
 
 import java.util.ArrayList;
@@ -30,6 +32,7 @@ import java.util.List;
  *   Expansion Hub motors .... 0 IntakeM, 1 Outtake (the flywheel)
  *   Servos .................. IntakeSL, IntakeSR, Staging (continuous rotation; they always spin with IntakeM)
  *   Control Hub I2C bus 0 ... imu (the hub's built-in IMU; the only heading source, there is no odometry)
+ *   USB ..................... Webcam 1 (points straight up at the CELLs' tags; optional, aiming is off without it)
  *
  * Driver controls (gamepad 1):
  *   Left stick .......... drive (field-centric)
@@ -47,6 +50,11 @@ import java.util.List;
  *   Right trigger ....... intake (hold). Fixed speed, however far the trigger is pulled.
  *   Right bumper ........ outtake / poop out (hold; wins over the trigger). Intake motor and Staging run backwards.
  *   Left bumper ......... flywheel ON/OFF (press to toggle). Runs at OUTTAKE_POWER until pressed again.
+ *                         While ON, if this alliance's raised CELL is in view, the robot turns onto it
+ *                         (CellAimer) and the right stick's turn is ignored; the left stick still drives.
+ *
+ * Before START (gamepad 1):
+ *   X / B ............... alliance: X = BLUE, B = RED. Aiming stays off until one is picked.
  *   Each intake servo's direction for intake and for outtake is set separately (LEFT_SERVO_* / RIGHT_SERVO_*).
  */
 @TeleOp(name = "I AM YOU (1 controller)")
@@ -64,6 +72,7 @@ public class iamyou extends LinearOpMode {
     static final String OUTTAKE_NAME = "Outtake";
     /** The Control Hub's built-in IMU. There is no odometry, so this is the only heading source. */
     static final String IMU_NAME = "imu";
+    static final String WEBCAM_NAME = "Webcam 1";
 
     /**
      * Flip this if positive power (right trigger) spits pieces out instead of pulling them in.
@@ -107,6 +116,7 @@ public class iamyou extends LinearOpMode {
     protected boolean twoControllers() {
         return false;
     }
+    boolean toggleAprilTagAdjust = true;
 
     @Override
     public void runOpMode() {
@@ -202,26 +212,61 @@ public class iamyou extends LinearOpMode {
         // Coast to a stop: braking a spinning flywheel hard is a shock load on the motor and gears.
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
+        // ================= CAMERA =================
+        // Only for aiming at the raised CELL. Optional like the IMU: without it the robot drives and shoots, unaimed.
+        // Metres out of the processor, because CellAimer levels the pose through the mount in metres.
+        WebcamName webcam = hardwareMap.tryGet(WebcamName.class, WEBCAM_NAME);
+        AprilTagProcessor tags = null;
+        VisionPortal camera = null;
+        if (webcam != null) {
+            tags = new AprilTagProcessor.Builder()
+                    .setOutputUnits(DistanceUnit.METER, AngleUnit.DEGREES)
+                    .build();
+            // No LiveView: the Control Hub has no screen to show it on, and drawing it costs loop time.
+            camera = new VisionPortal.Builder()
+                    .setCamera(webcam)
+                    .addProcessor(tags)
+                    .enableLiveView(false)
+                    .build();
+        }
+        // The aimer turns the robot itself only from its blocking aim(); here it is asked for a turn each loop and
+        // the turn is mixed into the drive, so this handle is never driven directly.
+        DriveHardware driveHardware = DriveHardware.initWithoutEncoders(hardwareMap);
+
         // Whoever runs the intake and outtake: the driver, or a second operator.
         Gamepad mech = twoControllers() ? gamepad2 : gamepad1;
 
         DriverPosition driverPosition = DriverPosition.SOUTH;
+        // null until the driver picks one; a ball in the other alliance's CELL scores for them, so there is no default.
+        Boolean red = null;
 
         try {
             // ================= PRE-START =================
             while (!isStarted() && !isStopRequested()) {
                 driverPosition = readDriverPosition(driverPosition);
+                if (gamepad1.x) {
+                    red = false;
+                } else if (gamepad1.b) {
+                    red = true;
+                }
 
                 telemetry.addData("Status", "Initialized - waiting for start");
                 telemetry.addData("Controllers", twoControllers()
                         ? "2 (gamepad 1 drives, gamepad 2 runs intake/outtake)" : "1 (gamepad 1 does everything)");
                 telemetry.addData("IMU", imuStatus);
                 telemetry.addData("Driver Position", driverPosition + "  (D-pad: Up=N Down=S Left=W Right=E)");
+                telemetry.addData("Alliance", red == null ? "NOT SET - aiming off  (X = BLUE, B = RED)"
+                        : (red ? "RED" : "BLUE") + "  (X = BLUE, B = RED)");
+                telemetry.addData("Camera", camera != null ? camera.getCameraState().toString()
+                        : "MISSING - aiming off. Add \"" + WEBCAM_NAME + "\" to the configuration");
                 telemetry.addData("Note", "Whatever direction the robot faces at START becomes NORTH");
                 telemetry.update();
             }
 
             if (isStopRequested()) return;
+
+            // Built now the alliance is final: CellAimer fixes it at construction.
+            CellAimer aimer = tags != null && red != null ? new CellAimer(tags, driveHardware, red) : null;
 
             // Zero heading at the moment of start: the robot's current front is NORTH.
             if (imu != null) {
@@ -253,11 +298,25 @@ public class iamyou extends LinearOpMode {
                 double heading = imu != null ? imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES) : 0.0;
                 driverPosition = imu != null ? readDriverPosition(driverPosition) : DriverPosition.SOUTH;
 
+                // ---- Aim ----
+                // While the flywheel is on, the aimer owns the turn whenever it can see the CELL. Asked every loop so
+                // its "settled" count is of consecutive frames, and reset when the flywheel goes off so a later spin-up
+                // starts counting afresh.
+                CellAimer.Aim aim = null;
+                if (aimer != null && outtakeLogic.isOn() && toggleAprilTagAdjust) {
+                    aim = aimer.update();
+                } else if (aimer != null) {
+                    aimer.reset();
+                }
+                boolean aiming = aim != null && aim.hasTarget();
+                if (gamepad1.xWasPressed()){
+                    toggleAprilTagAdjust = !toggleAprilTagAdjust;
+                }
                 // ---- Drive ----
                 DriveParameters params = new DriveParameters(
                         gamepad1.left_stick_x,
                         gamepad1.left_stick_y,
-                        TURN_REVERSED ? -gamepad1.right_stick_x : gamepad1.right_stick_x,
+                        aiming ? 0.0 : TURN_REVERSED ? -gamepad1.right_stick_x : gamepad1.right_stick_x,
                         gamepad1.left_trigger,
                         heading,
                         driverPosition,
@@ -269,10 +328,17 @@ public class iamyou extends LinearOpMode {
                 );
 
                 DriveResult result = driveLogic.calculate(params);
-                fl.setPower(result.powers.getFL());
-                fr.setPower(result.powers.getFR());
-                bl.setPower(result.powers.getBL());
-                br.setPower(result.powers.getBR());
+                double[] wheelPowers = {result.powers.getFL(), result.powers.getFR(),
+                        result.powers.getBL(), result.powers.getBR()};
+                if (aiming) {
+                    // Added after the drive math rather than fed in as a stick: the stick path's expo and ramps would
+                    // reshape the aimer's tuned turn. Counter-clockwise = left wheels back, right wheels forward.
+                    wheelPowers = addTurn(wheelPowers, aim.turnPower());
+                }
+                fl.setPower(wheelPowers[0]);
+                fr.setPower(wheelPowers[1]);
+                bl.setPower(wheelPowers[2]);
+                br.setPower(wheelPowers[3]);
 
                 // ---- Intake ----
                 if (Math.abs(lastIntakePower) > 0.05) {
@@ -321,12 +387,13 @@ public class iamyou extends LinearOpMode {
                 telemetry.addData("Staging",            "%.2f", stagingPower);
                 telemetry.addData("Flywheel",           "%s  power %.2f  %.0f ticks/s",
                         outtakeLogic.isOn() ? "ON" : "OFF", outtakePower, flywheelTicksPerSec, outtake.getVelocity());
+                telemetry.addData("Aim", aimStatus(aimer, aim, outtakeLogic.isOn()));
                 telemetry.addData("---", "---");
                 telemetry.addData("Cmd Fwd | Right",    "%.2f | %.2f", result.stickForward, result.stickRight);
                 telemetry.addData("Robot Fwd | Right",  "%.2f | %.2f", result.robotForward, result.robotRight);
                 telemetry.addData("Twist",              "%.2f", result.twist);
-                telemetry.addData("FL | FR",            "%.2f | %.2f", result.powers.getFL(), result.powers.getFR());
-                telemetry.addData("BL | BR",            "%.2f | %.2f", result.powers.getBL(), result.powers.getBR());
+                telemetry.addData("FL | FR",            "%.2f | %.2f", wheelPowers[0], wheelPowers[1]);
+                telemetry.addData("BL | BR",            "%.2f | %.2f", wheelPowers[2], wheelPowers[3]);
                 telemetry.addData("FL Vel | FR Vel",    "%.0f | %.0f", params.flVelocity, params.frVelocity);
                 telemetry.addData("BL Vel | BR Vel",    "%.0f | %.0f", params.blVelocity, params.brVelocity);
                 telemetry.update();
@@ -341,7 +408,41 @@ public class iamyou extends LinearOpMode {
             intakeServoRight.setPower(0.0);
             staging.setPower(0.0);
             outtake.setPower(0.0);
+            if (camera != null) {
+                camera.close();
+            }
         }
+    }
+
+    /**
+     * Adds a counter-clockwise turn to FL, FR, BL, BR wheel powers, scaled down together if any wheel would pass full
+     * power so the drive direction is kept.
+     */
+    static double[] addTurn(double[] powers, double turn) {
+        double[] out = {powers[0] - turn, powers[1] + turn, powers[2] - turn, powers[3] + turn};
+        double max = 1.0;
+        for (double p : out) {
+            max = Math.max(max, Math.abs(p));
+        }
+        for (int k = 0; k < 4; k++) {
+            out[k] /= max;
+        }
+        return out;
+    }
+
+    /** One telemetry line saying what the aimer is doing, or why it is not. */
+    private static String aimStatus(CellAimer aimer, CellAimer.Aim aim, boolean flywheelOn) {
+        if (aimer == null) {
+            return "off (no camera or no alliance picked before START)";
+        }
+        if (!flywheelOn) {
+            return "waiting for flywheel";
+        }
+        if (aim == null || !aim.hasTarget()) {
+            return "no CELL in view";
+        }
+        return String.format("%s  %.1f deg off  %.2f m",
+                aim.settled() ? "ON TARGET" : "turning", Math.toDegrees(aim.errorRadians()), aim.rangeMetres());
     }
 
     /** Adds "name (type)" to missing if the configuration has no device of that type under that name. */
