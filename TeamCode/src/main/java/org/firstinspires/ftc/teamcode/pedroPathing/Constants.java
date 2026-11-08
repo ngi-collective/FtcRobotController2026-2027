@@ -40,44 +40,40 @@ public class Constants {
     public static PinpointConfig localizerConfig = new PinpointConfig(c -> {
         c.name.set("pinpoint");
         c.podType.set(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
-        c.xPodOffset.set(-84.0);
-        c.yPodOffset.set(-168.0);
-        c.offsetUnits.set(DistanceUnit.MM);
+        c.xPodOffset.set(-3.7887642327256095);
+        c.yPodOffset.set(-1.1133000231164647);
         c.xPodDirection.set(GoBildaPinpointDriver.EncoderDirection.FORWARD);
-        c.yPodDirection.set(GoBildaPinpointDriver.EncoderDirection.FORWARD);
+        c.yPodDirection.set(GoBildaPinpointDriver.EncoderDirection.REVERSED);
         c.globalDistanceUnit.set(DistanceUnit.INCH);
+        c.offsetUnits.set(DistanceUnit.INCH);
     });
 
-    // UNTUNED: starting values that let the simulated robot follow a path, not numbers measured on
-    // the real one. Replace the whole block with ForesightTuner's output.
-    //   - velocities: the sim's free speed, 1.57 m/s = 61.8 in/s, and 80% of it sideways
-    //     (robot-config strafeEfficiency 0.8)
-    //   - decelerations: below the sim's grip limit of about 0.9 g = 347 in/s^2
-    //   - gains and brake coefficients: guesses, checked only by PedroPathingSimTest
+    // TUNED on the real robot with ForesightTuner, 2026-11-07. Re-run the tuner and replace this whole block
+    // after any change to the drivetrain, weight or wheels.
     public static ForesightConfig foresightConfig = new ForesightConfig(c -> {
-        Controller primaryTranslationalForward = Controller.proportional(0.1);
-        Controller secondaryTranslationalForward = Controller.proportional(0.05);
-        Controller primaryTranslationalLateral = Controller.proportional(0.1);
-        Controller secondaryTranslationalLateral = Controller.proportional(0.05);
+        Controller primaryTranslationalForward = Controller.proportional(0.24109671432838614);
+        Controller secondaryTranslationalForward = Controller.proportional(0.08907879372148371);
+        Controller primaryTranslationalLateral = Controller.proportional(0.29662096131391186);
+        Controller secondaryTranslationalLateral = Controller.proportional(0.10959351934743151);
 
         c.forwardTranslational.set(Controller.piecewise(secondaryTranslationalForward)
                 .put(2.5, primaryTranslationalForward));
         c.strafeTranslational.set(Controller.piecewise(secondaryTranslationalLateral)
                 .put(2.5, primaryTranslationalLateral));
 
-        c.coast.set(Controller.proportionalFeedforward(0.01));
-        c.brake.set(Controller.proportionalFeedforward(0.02));
+        c.coast.set(Controller.proportionalFeedforward(0.016629839359064622));
+        c.brake.set(Controller.proportionalFeedforward(0.014135363455204929));
 
-        c.headingFeedback.set(Controller.proportional(1.0));
-        c.headingBrakeCoefficients.set(Vector2D.cartesian(0.1, 0.01));
+        c.headingFeedback.set(Controller.proportional(3.9353403428397735));
+        c.headingBrakeCoefficients.set(Vector2D.cartesian(0.058440552307153205, 0.0037273534349095347));
 
-        c.linearBrakeCoefficients.set(Matrix.diag(0.05, 0.05));
-        c.quadraticBrakeCoefficients.set(Matrix.diag(0.002, 0.002));
+        c.linearBrakeCoefficients.set(Matrix.diag(0.077822495746091, 0.0640327054313192));
+        c.quadraticBrakeCoefficients.set(Matrix.diag(8.122631246593916E-4, 0.0010263014367774678));
 
-        c.maxAchievableForwardVelocity.set(61.8);
-        c.maxAchievableStrafeVelocity.set(49.4);
-        c.naturalForwardDeceleration.set(250.0);
-        c.naturalStrafeDeceleration.set(200.0);
+        c.maxAchievableForwardVelocity.set(59.90868640419559);
+        c.maxAchievableStrafeVelocity.set(50.621265628312756);
+        c.naturalForwardDeceleration.set(35.301751211680944);
+        c.naturalStrafeDeceleration.set(54.247378322048235);
     });
 
     public static Follower createFollower(HardwareMap hardwareMap) {

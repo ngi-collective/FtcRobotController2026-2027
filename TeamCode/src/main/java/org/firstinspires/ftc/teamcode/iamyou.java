@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 import com.qualcomm.hardware.lynx.LynxModule;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
@@ -15,6 +16,8 @@ import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
+import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import android.util.Size;
@@ -25,7 +28,8 @@ import java.util.List;
 /**
  * The whole I AM YOU TeleOp in one file: hardware setup, field-centric drive math, intake and flywheel control.
  * This class is the ONE-controller version; {@link IamYouTwoController} is the same program with the intake and
- * outtake moved to gamepad 2.
+ * outtake moved to gamepad 2. {@link IamYouPinpoint} and {@link IamYouPinpointTwoController} are the same two programs
+ * taking their heading from the goBILDA Pinpoint instead of the Control Hub's IMU.
  *
  * Wiring (robot configuration names):
  *   Control Hub motors ...... 0 FL, 1 FR, 2 BL, 3 BR
@@ -44,7 +48,7 @@ import java.util.List;
  *                         (the middle of the group if there are several) and the left stick drives ROBOT-relative,
  *                         so pushing forward drives straight into it. Moving the right stick overrides the aim.
  *   D-pad ............... where the driver is standing (Up=N Down=S Left=W Right=E)
- *   Options ............. re-zero heading (robot's current front becomes NORTH)
+ *   Options ............. zero heading: wherever the robot faces right now becomes NORTH
  *
  * Mechanism controls (gamepad 1 in this version, gamepad 2 in the two-controller version):
  *   Right trigger ....... intake (hold). Fixed speed, however far the trigger is pulled.
@@ -118,6 +122,14 @@ public class iamyou extends LinearOpMode {
     }
     boolean toggleAprilTagAdjust = true;
 
+    /**
+     * True = heading comes from the goBILDA Pinpoint instead of the Control Hub's IMU. The Pinpoint is set up from
+     * Constants.localizerConfig (name, pod type, offsets, directions), the same config Pedro Pathing uses.
+     */
+    protected boolean usePinpoint() {
+        return false;
+    }
+
     @Override
     public void runOpMode() {
 
@@ -141,6 +153,10 @@ public class iamyou extends LinearOpMode {
         requireDevice(CRServo.class, INTAKE_SERVO_LEFT_NAME, missing);
         requireDevice(CRServo.class, INTAKE_SERVO_RIGHT_NAME, missing);
         requireDevice(CRServo.class, STAGING_NAME, missing);
+        String pinpointName = Constants.localizerConfig.name.get();
+        if (usePinpoint()) {
+            requireDevice(GoBildaPinpointDriver.class, pinpointName, missing);
+        }
         if (!missing.isEmpty()) {
             while (!isStopRequested()) {
                 telemetry.addData("CONFIG ERROR", "The active robot configuration is missing:");
@@ -154,11 +170,18 @@ public class iamyou extends LinearOpMode {
             return;
         }
 
-        // ================= IMU SETUP =================
-        // The Control Hub's built-in IMU. The hub stands on its edge with its logo facing the robot's RIGHT side
-        // and its USB ports facing FORWARD (toward the intake). If it is missing from the configuration the robot
-        // still drives, robot-relative, instead of refusing to move.
-        IMU imu = hardwareMap.tryGet(IMU.class, IMU_NAME);
+        // ================= HEADING SOURCE =================
+        // Pinpoint versions: the Pinpoint's own IMU. It must sit still while it resets, so this happens during INIT.
+        GoBildaPinpointDriver pinpoint = null;
+        if (usePinpoint()) {
+            pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, pinpointName);
+            configurePinpoint(pinpoint);
+        }
+
+        // Control Hub versions: the hub's built-in IMU. The hub stands on its edge with its logo facing the robot's
+        // RIGHT side and its USB ports facing FORWARD (toward the intake). If it is missing from the configuration
+        // the robot still drives, robot-relative, instead of refusing to move.
+        IMU imu = usePinpoint() ? null : hardwareMap.tryGet(IMU.class, IMU_NAME);
         if (imu != null) {
             imu.initialize(new IMU.Parameters(
                     new RevHubOrientationOnRobot(
@@ -167,8 +190,10 @@ public class iamyou extends LinearOpMode {
                     )
             ));
         }
-        String imuStatus = imu != null ? "OK"
+        String imuStatus = pinpoint != null ? "Pinpoint \"" + pinpointName + "\""
+                : imu != null ? "Control Hub IMU"
                 : "MISSING - driving ROBOT-relative. Add \"" + IMU_NAME + "\" to the Control Hub's I2C bus 0";
+        boolean hasHeading = pinpoint != null || imu != null;
 
         // ================= DRIVE MOTORS =================
         DcMotorEx fl = hardwareMap.get(DcMotorEx.class, FL_NAME);
@@ -253,7 +278,8 @@ public class iamyou extends LinearOpMode {
                 telemetry.addData("Status", "Initialized - waiting for start");
                 telemetry.addData("Controllers", twoControllers()
                         ? "2 (gamepad 1 drives, gamepad 2 runs intake/outtake)" : "1 (gamepad 1 does everything)");
-                telemetry.addData("IMU", imuStatus);
+                telemetry.addData("Heading Source", imuStatus);
+                telemetry.addData("Zero Heading",  "Options button: wherever the robot faces becomes NORTH");
                 telemetry.addData("Driver Position", driverPosition + "  (D-pad: Up=N Down=S Left=W Right=E)");
                 telemetry.addData("Alliance", red == null ? "NOT SET - aiming off  (X = BLUE, B = RED)"
                         : (red ? "RED" : "BLUE") + "  (X = BLUE, B = RED)");
@@ -269,9 +295,7 @@ public class iamyou extends LinearOpMode {
             CellAimer aimer = tags != null && red != null ? new CellAimer(tags, driveHardware, red) : null;
 
             // Zero heading at the moment of start: the robot's current front is NORTH.
-            if (imu != null) {
-                imu.resetYaw();
-            }
+            zeroHeading(pinpoint, imu);
 
             ElapsedTime loopTimer = new ElapsedTime();
             ElapsedTime currentTimer = new ElapsedTime();
@@ -290,13 +314,13 @@ public class iamyou extends LinearOpMode {
                 loopTimer.reset();
 
                 // Options button: re-zero so the robot's current front becomes NORTH.
-                if (gamepad1.options && imu != null) {
-                    imu.resetYaw();
+                if (gamepad1.options) {
+                    zeroHeading(pinpoint, imu);
                 }
 
-                // No IMU = heading stuck at 0 and driver position ignored, so the left stick is plain robot-relative.
-                double heading = imu != null ? imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES) : 0.0;
-                driverPosition = imu != null ? readDriverPosition(driverPosition) : DriverPosition.SOUTH;
+                // No heading source = heading stuck at 0 and driver position ignored: plain robot-relative driving.
+                double heading = readHeading(pinpoint, imu);
+                driverPosition = hasHeading ? readDriverPosition(driverPosition) : DriverPosition.SOUTH;
 
                 // ---- Aim ----
                 // While the flywheel is on, the aimer owns the turn whenever it can see the CELL. Asked every loop so
@@ -373,8 +397,12 @@ public class iamyou extends LinearOpMode {
 
                 // ================= TELEMETRY =================
                 telemetry.addData("Loop", "%.1f ms  (%.0f Hz)", dt * 1000.0, dt > 0 ? 1.0 / dt : 0.0);
-                if (imu == null) {
+                if (!hasHeading) {
                     telemetry.addData("IMU", imuStatus);
+                }
+                if (pinpoint != null) {
+                    telemetry.addData("Pinpoint", "%s  x %.1f in  y %.1f in", pinpoint.getDeviceStatus(),
+                            pinpoint.getPosX(DistanceUnit.INCH), pinpoint.getPosY(DistanceUnit.INCH));
                 }
                 telemetry.addData("Facing (vs start)",  snapToCardinal(heading));
                 telemetry.addData("Driver Position",    driverPosition + "  (D-pad to change)");
@@ -414,35 +442,46 @@ public class iamyou extends LinearOpMode {
         }
     }
 
-    /**
-     * Adds a counter-clockwise turn to FL, FR, BL, BR wheel powers, scaled down together if any wheel would pass full
-     * power so the drive direction is kept.
-     */
-    static double[] addTurn(double[] powers, double turn) {
-        double[] out = {powers[0] - turn, powers[1] + turn, powers[2] - turn, powers[3] + turn};
-        double max = 1.0;
-        for (double p : out) {
-            max = Math.max(max, Math.abs(p));
+    /** Applies Constants.localizerConfig to the Pinpoint, then resets its position and IMU (robot must be still). */
+    private void configurePinpoint(GoBildaPinpointDriver pinpoint) {
+        pinpoint.setOffsets(Constants.localizerConfig.xPodOffset.get(), Constants.localizerConfig.yPodOffset.get(),
+                Constants.localizerConfig.offsetUnits.get());
+        if (Constants.localizerConfig.ticksPerUnit.get().isPresent()) {
+            pinpoint.setEncoderResolution(Constants.localizerConfig.ticksPerUnit.get().getAsDouble(),
+                    Constants.localizerConfig.encoderResolutionUnit.get());
+        } else {
+            pinpoint.setEncoderResolution(Constants.localizerConfig.podType.get());
         }
-        for (int k = 0; k < 4; k++) {
-            out[k] /= max;
-        }
-        return out;
+        pinpoint.setEncoderDirections(Constants.localizerConfig.xPodDirection.get(),
+                Constants.localizerConfig.yPodDirection.get());
+        pinpoint.resetPosAndIMU();
+        telemetry.addData("Status", "Resetting Pinpoint - keep the robot still");
+        telemetry.update();
+        sleep(500);
     }
 
-    /** One telemetry line saying what the aimer is doing, or why it is not. */
-    private static String aimStatus(CellAimer aimer, CellAimer.Aim aim, boolean flywheelOn) {
-        if (aimer == null) {
-            return "off (no camera or no alliance picked before START)";
+    /** Makes the robot's current front heading 0 (NORTH). The Pinpoint keeps its x/y position. */
+    private static void zeroHeading(GoBildaPinpointDriver pinpoint, IMU imu) {
+        if (pinpoint != null) {
+            pinpoint.update();
+            pinpoint.setPosition(new Pose2D(DistanceUnit.INCH,
+                    pinpoint.getPosX(DistanceUnit.INCH), pinpoint.getPosY(DistanceUnit.INCH),
+                    AngleUnit.DEGREES, 0.0));
+        } else if (imu != null) {
+            imu.resetYaw();
         }
-        if (!flywheelOn) {
-            return "waiting for flywheel";
+    }
+
+    /** Heading in degrees, counter-clockwise positive, 0 = where the robot faced when last zeroed. */
+    private static double readHeading(GoBildaPinpointDriver pinpoint, IMU imu) {
+        if (pinpoint != null) {
+            pinpoint.update();
+            return pinpoint.getHeading(AngleUnit.DEGREES);
         }
-        if (aim == null || !aim.hasTarget()) {
-            return "no CELL in view";
+        if (imu != null) {
+            return imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
         }
-        return String.format("%s  %.1f deg off  %.2f m",
-                aim.settled() ? "ON TARGET" : "turning", Math.toDegrees(aim.errorRadians()), aim.rangeMetres());
+        return 0.0;
     }
 
     /** Adds "name (type)" to missing if the configuration has no device of that type under that name. */
