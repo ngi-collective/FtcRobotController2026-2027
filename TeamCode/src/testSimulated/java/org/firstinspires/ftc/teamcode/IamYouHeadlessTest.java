@@ -24,9 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code gamepad1}, and pushes telemetry exactly as it does on the field. Everything it touches is
  * simulated by the test framework.</p>
  *
- * <p>Driving is asserted on pose, not wheel powers. {@link IamYouLogic} shapes, caps and
+ * <p>Driving is asserted on pose, not wheel powers. The drive in {@link iamyou} deadzones, scales and
  * friction-boosts every command, so the powers are tuning; where the robot goes is the
- * behaviour. {@link IamYouLogicTest} owns the numbers.</p>
+ * behaviour. {@link IamYouTest} owns the numbers.</p>
  */
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28)
@@ -50,7 +50,10 @@ public class IamYouHeadlessTest {
     public void initializesTheImuTheDriveMotorsAndTheIntakeBeforeStart() {
         launch();
 
-        assertTrue(hardware.imu("imu").isInitialized(), "the OpMode must initialize the IMU");
+        // Heading comes from the Pinpoint, which launch() has already watched finish calibrating.
+        assertTrue(harness.lastTelemetry().stream()
+                        .anyMatch(line -> line.startsWith("Heading Source : Pinpoint")),
+                "telemetry was " + harness.lastTelemetry());
         for (String wheel : WHEELS) {
             // Plain power on purpose: iamyou reads the encoders for its stop assist but drives
             // without the hub's velocity PID.
@@ -104,18 +107,35 @@ public class IamYouHeadlessTest {
         assertTrue(slow < 0.5 * full, "slow mode covered " + slow + " m against " + full + " m");
     }
 
+    /**
+     * The whole point of field-centric: wherever the robot has turned to, forward on the stick drives the way it
+     * faced at START (+X), and right on the stick drives toward that start direction's right (-Y).
+     *
+     * <p>The robot is turned by driving it, not by placing it: a Pinpoint measures turns its gyro feels, and a robot
+     * picked up and put down turned (setPose) has not turned as far as the Pinpoint knows.</p>
+     */
     @Test
-    public void forwardStickKeepsDrivingDownFieldAfterTheChassisTurns() {
+    public void sticksDriveTheSameFieldDirectionsAtEveryHeading() {
         launchAndStart();
-        // A quarter turn left after START: the robot now faces +Y, but NORTH is still +X.
-        hardware.drive().setPose(new Pose2d(0.0, 0.0, Math.PI / 2));
-        harness.advance(TICK);
-        assertEquals(90.0, yaw(), 0.5, "the IMU should report the turn");
+        for (double target : new double[]{90.0, 180.0, -90.0, 0.0, 45.0}) {
+            turnTo(target);
+            double heading = hardware.drive().pose().heading();
+            String at = " at heading " + Math.round(Math.toDegrees(heading));
 
-        Pose2d pose = drive(0.0, -1.0, 0.0f, 0.5);
+            // Back to the middle of the field (placed, so the Pinpoint's heading is untouched), clear of the walls.
+            hardware.drive().setPose(new Pose2d(0.0, 0.0, heading));
+            Pose2d forward = drive(0.0, -1.0, 0.0f, 0.4);
+            release();
+            hardware.drive().setPose(new Pose2d(0.0, 0.0, heading));
+            assertTrue(forward.x() > 0.15, "forward should drive along +X" + at + ", got " + forward);
+            assertTrue(Math.abs(forward.y()) < 0.15 * forward.x(), "forward drifted along Y" + at + ": " + forward);
+            assertTrue(Math.abs(forward.headingDegrees()) < 5.0, "forward turned the robot" + at + ": " + forward);
 
-        assertTrue(pose.x() > 0.15, "expected field-centric drive along +X, got " + pose);
-        assertTrue(Math.abs(pose.y()) < 0.1 * pose.x(), "expected no drift along Y, got " + pose);
+            Pose2d right = drive(1.0, 0.0, 0.0f, 0.4);
+            release();
+            assertTrue(right.y() < -0.15, "right should drive along -Y" + at + ", got " + right);
+            assertTrue(Math.abs(right.x()) < 0.15 * -right.y(), "right drifted along X" + at + ": " + right);
+        }
     }
 
     @Test
@@ -155,12 +175,26 @@ public class IamYouHeadlessTest {
     @Test
     public void reportsWhichWayTheRobotFacesInTelemetry() {
         launchAndStart();
-        hardware.drive().setPose(new Pose2d(0.0, 0.0, -Math.PI / 2));
-        harness.advance(TICK);
+        turnTo(-90.0);
 
         await(() -> harness.lastTelemetry().contains("Facing (vs start) : EAST"),
                 () -> "telemetry never reported the new heading; last was " + harness.lastTelemetry());
-        assertEquals(-90.0, yaw(), 0.5);
+    }
+
+    @Test
+    public void optionsMakesTheCurrentDirectionNorth() {
+        launchAndStart();
+        turnTo(90.0);
+
+        harness.gamepad1().options = true;
+        await(() -> harness.lastTelemetry().contains("Facing (vs start) : NORTH"),
+                () -> "Options never re-zeroed the heading; last was " + harness.lastTelemetry());
+        harness.gamepad1().options = false;
+
+        // Forward now drives the way the robot faces (+Y), not the original start direction.
+        Pose2d forward = drive(0.0, -1.0, 0.0f, 0.4);
+        assertTrue(forward.y() > 0.15, "forward should now drive along +Y, got " + forward);
+        assertTrue(Math.abs(forward.x()) < 0.15 * forward.y(), "forward drifted along X: " + forward);
     }
 
     @Test
@@ -212,12 +246,54 @@ public class IamYouHeadlessTest {
         await(() -> harness.lastTelemetry().contains("Status : Initialized - waiting for start"),
                 () -> "the OpMode never reached its init loop; last telemetry was "
                         + harness.lastTelemetry());
+        // The Pinpoint recalibrates its gyro at INIT, in simulated time; a driver waits for READY, so the tests do.
+        for (int tick = 0; tick < 50 && !pinpointReady(); tick++) {
+            harness.advance(TICK);
+            Thread.yield();
+        }
+        await(this::pinpointReady,
+                () -> "the Pinpoint never reported READY; last telemetry was " + harness.lastTelemetry());
+    }
+
+    private boolean pinpointReady() {
+        return harness.lastTelemetry().stream().anyMatch(line -> line.startsWith("Pinpoint : READY"));
+    }
+
+    /**
+     * Turns the robot by driving it (right stick) until it faces within a few degrees of {@code degrees}, then lets
+     * go and lets it stop. Where it ends up exactly does not matter: field-centric must work at whatever heading the
+     * Pinpoint reports.
+     */
+    private void turnTo(double degrees) {
+        for (int tick = 0; tick < 400; tick++) {
+            double error = AngleUnit.normalizeDegrees(degrees - hardware.drive().pose().headingDegrees());
+            if (Math.abs(error) < 4.0) {
+                break;
+            }
+            // Positive right stick turns clockwise, which is a falling heading.
+            harness.gamepad1().right_stick_x = (float) (error > 0 ? -0.4 : 0.4);
+            harness.advance(TICK);
+            harness.eventLoopIteration();
+        }
+        release();
+    }
+
+    /** Lets go of every stick and lets the robot come to rest. */
+    private void release() {
+        harness.gamepad1().left_stick_x = 0.0f;
+        harness.gamepad1().left_stick_y = 0.0f;
+        harness.gamepad1().right_stick_x = 0.0f;
+        harness.gamepad1().left_trigger = 0.0f;
+        for (int tick = 0; tick < 25; tick++) {
+            harness.advance(TICK);
+            harness.eventLoopIteration();
+        }
     }
 
     /**
      * Presses START and waits for the main loop.
      *
-     * <p>iamyou zeroes the IMU after START, so a test that turns the chassis before that reset
+     * <p>iamyou zeroes the heading after START, so a test that turns the chassis before that reset
      * lands has its turn become NORTH. The loop's own telemetry is the first thing that comes
      * after the reset.</p>
      */
@@ -234,8 +310,8 @@ public class IamYouHeadlessTest {
      * Holds the sticks, waits for the OpMode's command to settle, then drives for {@code seconds}
      * of simulated time from where the robot stands.
      *
-     * <p>The wait matters: iamyou ramps its command, and simulated time advancing mid-ramp would
-     * measure the ramp rather than the drive.</p>
+     * <p>The wait matters: the OpMode reads the gamepad on its own thread, and simulated time advancing before it
+     * has would measure a robot still obeying the previous sticks.</p>
      */
     private Pose2d drive(double leftX, double leftY, float leftTrigger, double seconds) {
         harness.gamepad1().left_stick_x = (float) leftX;
@@ -281,10 +357,6 @@ public class IamYouHeadlessTest {
         await(() -> Math.abs(hardware.motor(iamyou.INTAKE_NAME).getPower() - expected) < 1e-9,
                 () -> "the intake never reached " + expected + "; it was "
                         + hardware.motor(iamyou.INTAKE_NAME).getPower());
-    }
-
-    private double yaw() {
-        return hardware.imu("imu").getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
     }
 
     private String currentWheelPowers() {

@@ -2,8 +2,8 @@ package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 /**
  * Single source of truth for the mecanum drivetrain's hardware-map names and
@@ -61,10 +61,11 @@ public class DriveHardware {
         DcMotorEx bl = hardwareMap.get(DcMotorEx.class, BL_NAME);
         DcMotorEx br = hardwareMap.get(DcMotorEx.class, BR_NAME);
 
-        fl.setDirection(DcMotorSimple.Direction.REVERSE);
-        bl.setDirection(DcMotorSimple.Direction.REVERSE);
-        fr.setDirection(DcMotorSimple.Direction.FORWARD);
-        br.setDirection(DcMotorSimple.Direction.FORWARD);
+        // Measured on the real robot with Pedro's Mecanum Tuner; kept in one place, Constants.drivetrainConfig.
+        fl.setDirection(Constants.drivetrainConfig.frontLeftDirection.get());
+        bl.setDirection(Constants.drivetrainConfig.backLeftDirection.get());
+        fr.setDirection(Constants.drivetrainConfig.frontRightDirection.get());
+        br.setDirection(Constants.drivetrainConfig.backRightDirection.get());
 
         return new DriveHardware(fl, fr, bl, br);
     }

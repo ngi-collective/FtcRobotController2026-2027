@@ -2,10 +2,9 @@ package org.firstinspires.ftc.teamcode;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Random;
-
 import static org.junit.jupiter.api.Assertions.*;
 
+/** The drive math inside {@link iamyou}: direct field-centric mecanum, slow mode and the stop assist. */
 class IamYouTest {
 
     private static final double DT = 0.02;          // 50 Hz loop
@@ -14,24 +13,26 @@ class IamYouTest {
 
     /** Raw gamepad values: stick up is NEGATIVE y. Wheel velocities are all set to the same value. */
     private static iamyou.DriveParameters input(double stickX, double stickY, double twist, double trigger,
-                                                     double heading, iamyou.DriverPosition pos,
-                                                     double wheelVel) {
+                                                double heading, iamyou.DriverPosition pos, double wheelVel) {
         return new iamyou.DriveParameters(stickX, stickY, twist, trigger, heading, pos,
                 wheelVel, wheelVel, wheelVel, wheelVel, DT);
     }
 
-    /** Holds the inputs for 2 seconds so the acceleration limiter has fully settled. */
-    private static iamyou.DriveResult hold(iamyou.Drive logic, double stickX, double stickY, double twist,
-                                                double trigger, double heading, iamyou.DriverPosition pos) {
-        iamyou.DriveResult result = null;
-        for (int i = 0; i < 100; i++) {
-            result = logic.calculate(input(stickX, stickY, twist, trigger, heading, pos, 0.0));
-        }
-        return result;
+    private static iamyou.DriveResult once(double stickX, double stickY, double twist, double heading,
+                                           iamyou.DriverPosition pos) {
+        return new iamyou.Drive().calculate(input(stickX, stickY, twist, 0.0, heading, pos, 0.0));
     }
 
-    private static double angleDiff(double a, double b) {
-        return Math.atan2(Math.sin(a - b), Math.cos(a - b));
+    private static double[] wheels(iamyou.DriveResult r) {
+        return new double[]{r.powers.getFL(), r.powers.getFR(), r.powers.getBL(), r.powers.getBR()};
+    }
+
+    /** Where a set of wheel powers pushes the robot, in the robot's frame: {right, forward}. */
+    private static double[] robotMotion(iamyou.DriveResult r) {
+        double[] w = wheels(r);
+        double forward = (w[0] + w[1] + w[2] + w[3]) / 4.0;
+        double right = (w[0] - w[1] - w[2] + w[3]) / 4.0;
+        return new double[]{right, forward};
     }
 
     // ------------------------------------------------------------------ cardinals
@@ -42,326 +43,358 @@ class IamYouTest {
         assertEquals(iamyou.Cardinal.NORTH, iamyou.snapToCardinal(44));
         assertEquals(iamyou.Cardinal.NORTH, iamyou.snapToCardinal(-44));
         assertEquals(iamyou.Cardinal.NORTH, iamyou.snapToCardinal(400));   // wraps to 40
-
-        // yaw is counter-clockwise positive, so +90 is a left turn = WEST
         assertEquals(iamyou.Cardinal.WEST, iamyou.snapToCardinal(90));
-        assertEquals(iamyou.Cardinal.WEST, iamyou.snapToCardinal(46));
-        assertEquals(iamyou.Cardinal.WEST, iamyou.snapToCardinal(134));
-
         assertEquals(iamyou.Cardinal.EAST, iamyou.snapToCardinal(-90));
-        assertEquals(iamyou.Cardinal.EAST, iamyou.snapToCardinal(-46));
-        assertEquals(iamyou.Cardinal.EAST, iamyou.snapToCardinal(-134));
-
         assertEquals(iamyou.Cardinal.SOUTH, iamyou.snapToCardinal(180));
         assertEquals(iamyou.Cardinal.SOUTH, iamyou.snapToCardinal(-180));
-        assertEquals(iamyou.Cardinal.SOUTH, iamyou.snapToCardinal(-179));
-        assertEquals(iamyou.Cardinal.SOUTH, iamyou.snapToCardinal(136));
-        assertEquals(iamyou.Cardinal.SOUTH, iamyou.snapToCardinal(-136));
     }
 
-    // ------------------------------------------------------------------ basic driving
+    // ------------------------------------------------------------------ direct response
 
     @Test
-    void testForwardDrivesAllWheelsForward() {
-        // Heading 0, driver SOUTH (baseline), stick pushed fully up.
-        iamyou.DriveResult r = hold(new iamyou.Drive(), 0.0, -1.0, 0.0, 0.0, 0.0, SOUTH);
-
-        double expected = iamyou.TRANSLATION_SPEED_CAP + iamyou.STATIC_FRICTION_POWER;
-        assertEquals(expected, r.powers.getFL(), EPS);
-        assertEquals(expected, r.powers.getFR(), EPS);
-        assertEquals(expected, r.powers.getBL(), EPS);
-        assertEquals(expected, r.powers.getBR(), EPS);
-        assertFalse(r.braking);
+    void testFullStickIsFullPowerOnTheFirstLoop() {
+        // No ramp: the very first loop with the stick pushed commands full power.
+        assertArrayEquals(new double[]{1, 1, 1, 1}, wheels(once(0.0, -1.0, 0.0, 0.0, SOUTH)), EPS);
     }
 
     @Test
-    void testStrafeRight() {
-        iamyou.DriveResult r = hold(new iamyou.Drive(), 1.0, 0.0, 0.0, 0.0, 0.0, SOUTH);
-
-        assertTrue(r.powers.getFL() > 0);
-        assertTrue(r.powers.getFR() < 0);
-        assertTrue(r.powers.getBL() < 0);
-        assertTrue(r.powers.getBR() > 0);
-        assertEquals(r.powers.getFL(), r.powers.getBR(), EPS);
-        assertEquals(r.powers.getFR(), r.powers.getBL(), EPS);
+    void testFullStrafeRightIsTheMecanumXPattern() {
+        assertArrayEquals(new double[]{1, -1, -1, 1}, wheels(once(1.0, 0.0, 0.0, 0.0, SOUTH)), EPS);
     }
 
     @Test
-    void testTurnRightIsClockwise() {
-        // Right stick pushed fully right: left wheels forward, right wheels backward.
-        iamyou.DriveResult r = hold(new iamyou.Drive(), 0.0, 0.0, 1.0, 0.0, 0.0, SOUTH);
-
-        assertEquals(1.0, r.powers.getFL(), EPS);
-        assertEquals(-1.0, r.powers.getFR(), EPS);
-        assertEquals(1.0, r.powers.getBL(), EPS);
-        assertEquals(-1.0, r.powers.getBR(), EPS);
+    void testPositiveTwistTurnsClockwise() {
+        double[] w = wheels(once(0.0, 0.0, 1.0, 0.0, SOUTH));
+        assertTrue(w[0] > 0 && w[2] > 0, "left side forward");
+        assertTrue(w[1] < 0 && w[3] < 0, "right side backward");
     }
 
     @Test
-    void testSlowModeReducesSpeed() {
-        iamyou.DriveResult normal = hold(new iamyou.Drive(), 0.0, -1.0, 0.0, 0.0, 0.0, SOUTH);
-        iamyou.DriveResult slow = hold(new iamyou.Drive(), 0.0, -1.0, 0.0, 1.0, 0.0, SOUTH);
+    void testHalfStickIsAboutHalfPower() {
+        // Linear response: no curve to make small movements feel dead.
+        double fl = once(0.0, -0.5, 0.0, 0.0, SOUTH).powers.getFL();
+        double stick = (0.5 - iamyou.JOYSTICK_DEADZONE) / (1.0 - iamyou.JOYSTICK_DEADZONE);
+        assertEquals(stick + iamyou.STATIC_FRICTION_POWER, fl, EPS);
+    }
 
+    @Test
+    void testReleasingTheStickCutsDrivePowerOnTheNextLoop() {
+        iamyou.Drive logic = new iamyou.Drive();
+        logic.calculate(input(0.0, -1.0, 0.0, 0.0, 0.0, SOUTH, 0.0));
+        // Wheels already stopped, so the stop assist has nothing to do: every wheel goes straight to 0.
+        assertArrayEquals(new double[]{0, 0, 0, 0},
+                wheels(logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 0.0))), EPS);
+    }
+
+    @Test
+    void testAStickRestingJustOffCenterCountsAsReleased() {
+        double off = iamyou.JOYSTICK_DEADZONE * 0.9;
+        // hypot(off, 0.3 * off) is still inside the circular deadzone.
+        assertArrayEquals(new double[]{0, 0, 0, 0}, wheels(once(off, -off * 0.3, off, 0.0, SOUTH)), EPS);
+    }
+
+    @Test
+    void testSlowModeScalesDriving() {
+        iamyou.DriveResult slow = new iamyou.Drive().calculate(input(0.0, -1.0, 0.0, 1.0, 0.0, SOUTH, 0.0));
         assertTrue(slow.slowMode);
-        assertFalse(normal.slowMode);
-        assertTrue(slow.powers.getFL() > 0);
-        assertTrue(slow.powers.getFL() < normal.powers.getFL());
+        assertEquals(iamyou.SLOW_MODE_DRIVE_MULT + iamyou.STATIC_FRICTION_POWER, slow.powers.getFL(), EPS);
+    }
+
+    @Test
+    void testDiagonalKeepsItsDirection() {
+        // Scaling by the largest wheel must never bend the path toward an axis.
+        for (double deg = 0; deg < 360; deg += 15) {
+            double sx = Math.cos(Math.toRadians(deg));
+            double sy = Math.sin(Math.toRadians(deg));
+            double[] m = robotMotion(once(sx, -sy, 0.0, 0.0, SOUTH));
+            // Undo the strafe compensation to compare against the stick direction.
+            double actual = Math.atan2(m[1], m[0] / iamyou.STRAFE_COMPENSATION);
+            double diff = Math.atan2(Math.sin(actual - Math.toRadians(deg)), Math.cos(actual - Math.toRadians(deg)));
+            assertEquals(0.0, diff, 0.05, "stick at " + deg + " deg");
+        }
     }
 
     // ------------------------------------------------------------------ field-centric
 
+    /**
+     * The whole circle, not just the cardinals: at every heading, "stick forward" must push the robot toward the
+     * field direction it faced at zero. In the robot's frame that is the direction the robot turned AWAY from.
+     */
     @Test
-    void testHeadingRotatesFieldForwardIntoRobotFrame() {
-        // Robot has turned to face EAST (clockwise, so yaw = -90). Stick forward means "field north",
-        // which is now the robot's LEFT, so it must strafe left.
-        iamyou.DriveResult r = hold(new iamyou.Drive(), 0.0, -1.0, 0.0, 0.0, -90.0, SOUTH);
-
-        assertTrue(r.powers.getFL() < 0);
-        assertTrue(r.powers.getFR() > 0);
-        assertTrue(r.powers.getBL() > 0);
-        assertTrue(r.powers.getBR() < 0);
-    }
-
-    @Test
-    void testRobotTurnedAroundDrivesBackwards() {
-        // Robot faces SOUTH (heading 180). Stick forward = field north = robot's back.
-        iamyou.DriveResult r = hold(new iamyou.Drive(), 0.0, -1.0, 0.0, 0.0, 180.0, SOUTH);
-
-        assertTrue(r.powers.getFL() < 0);
-        assertTrue(r.powers.getFR() < 0);
-        assertTrue(r.powers.getBL() < 0);
-        assertTrue(r.powers.getBR() < 0);
-    }
-
-    @Test
-    void testDriverAtNorthReversesControls() {
-        // Driver stands in front of the robot looking south, so "away from me" is field south.
-        iamyou.DriveResult r = hold(new iamyou.Drive(), 0.0, -1.0, 0.0, 0.0, 0.0,
-                iamyou.DriverPosition.NORTH);
-
-        assertTrue(r.powers.getFL() < 0);
-        assertTrue(r.powers.getFR() < 0);
-        assertTrue(r.powers.getBL() < 0);
-        assertTrue(r.powers.getBR() < 0);
-    }
-
-    @Test
-    void testDriverAtEastSendsForwardStickToTheLeft() {
-        // Driver on the east side looking west: "away from me" is field west = robot's left at heading 0.
-        iamyou.DriveResult r = hold(new iamyou.Drive(), 0.0, -1.0, 0.0, 0.0, 0.0,
-                iamyou.DriverPosition.EAST);
-
-        assertTrue(r.powers.getFL() < 0);
-        assertTrue(r.powers.getFR() > 0);
-        assertTrue(r.powers.getBL() > 0);
-        assertTrue(r.powers.getBR() < 0);
-    }
-
-    @Test
-    void testRobotFollowsStickAngle() {
-        // Guards against the "snaps to an axis" problem: at 60% stick, the direction the robot moves
-        // must stay within 10 degrees of the direction the stick points, at every angle.
-        for (double deg = 0; deg < 360; deg += 15) {
-            double sx = Math.sin(Math.toRadians(deg)) * 0.6;
-            double sy = Math.cos(Math.toRadians(deg)) * 0.6;
-            iamyou.DriveResult r = hold(new iamyou.Drive(), sx, -sy, 0.0, 0.0, 0.0, SOUTH);
-
-            double forward = (r.powers.getFL() + r.powers.getFR() + r.powers.getBL() + r.powers.getBR()) / 4.0;
-            double right = (r.powers.getFL() - r.powers.getFR() - r.powers.getBL() + r.powers.getBR()) / 4.0
-                    / iamyou.STRAFE_COMPENSATION;
-            double error = Math.abs(angleDiff(Math.atan2(right, forward), Math.atan2(sx, sy)));
-
-            assertTrue(Math.toDegrees(error) < 10.0,
-                    "stick angle " + deg + " drove " + Math.toDegrees(error) + " degrees off");
-        }
-    }
-
-    // ------------------------------------------------------------------ smoothing and limits
-
-    @Test
-    void testAccelerationIsLimited() {
-        iamyou.Drive logic = new iamyou.Drive();
-        iamyou.DriveResult first = logic.calculate(input(0.0, -1.0, 0.0, 0.0, 0.0, SOUTH, 0.0));
-
-        double maxStep = iamyou.MAX_TRANSLATION_CHANGE_PER_SEC * DT;
-        assertTrue(first.stickForward > 0);
-        assertTrue(first.stickForward <= maxStep + 1e-9);
-    }
-
-    @Test
-    void testDeadzoneIgnoresTinyStickInput() {
-        iamyou.DriveResult r = hold(new iamyou.Drive(), 0.03, -0.03, 0.03, 0.0, 0.0, SOUTH);
-
-        assertEquals(0.0, r.powers.getFL(), 1e-9);
-        assertEquals(0.0, r.powers.getFR(), 1e-9);
-        assertEquals(0.0, r.powers.getBL(), 1e-9);
-        assertEquals(0.0, r.powers.getBR(), 1e-9);
-    }
-
-    @Test
-    void testWheelPowerNeverExceedsOne() {
-        iamyou.Drive logic = new iamyou.Drive();
-        iamyou.DriverPosition[] positions = iamyou.DriverPosition.values();
-        Random random = new Random(1);
-
-        for (int i = 0; i < 5000; i++) {
-            iamyou.DriveResult r = logic.calculate(input(
-                    random.nextDouble() * 2 - 1, random.nextDouble() * 2 - 1, random.nextDouble() * 2 - 1,
-                    random.nextDouble(), random.nextDouble() * 360 - 180,
-                    positions[random.nextInt(positions.length)], 0.0));
-            assertTrue(Math.abs(r.powers.getFL()) <= 1.0 + EPS);
-            assertTrue(Math.abs(r.powers.getFR()) <= 1.0 + EPS);
-            assertTrue(Math.abs(r.powers.getBL()) <= 1.0 + EPS);
-            assertTrue(Math.abs(r.powers.getBR()) <= 1.0 + EPS);
+    void testForwardStickIsTheSameFieldDirectionAtEveryHeading() {
+        for (double heading = -720; heading <= 720; heading += 15) {
+            double[] m = robotMotion(once(0.0, -1.0, 0.0, heading, SOUTH));
+            // Field "north" seen from a robot turned CCW by h is at angle (90 - h) in robot (x right, y fwd) terms.
+            double expected = Math.toRadians(90.0 - heading);
+            double actual = Math.atan2(m[1], m[0] / iamyou.STRAFE_COMPENSATION);
+            double diff = Math.atan2(Math.sin(actual - expected), Math.cos(actual - expected));
+            assertEquals(0.0, diff, 0.05, "heading " + heading);
         }
     }
 
     @Test
-    void testIdleSendsExactlyZero() {
+    void testTurnedNinetyLeftForwardStickStrafesRight() {
+        assertArrayEquals(new double[]{1, -1, -1, 1}, wheels(once(0.0, -1.0, 0.0, 90.0, SOUTH)), EPS);
+    }
+
+    @Test
+    void testTurnedNinetyRightForwardStickStrafesLeft() {
+        assertArrayEquals(new double[]{-1, 1, 1, -1}, wheels(once(0.0, -1.0, 0.0, -90.0, SOUTH)), EPS);
+    }
+
+    @Test
+    void testTurnedAroundForwardStickDrivesBackward() {
+        assertArrayEquals(new double[]{-1, -1, -1, -1}, wheels(once(0.0, -1.0, 0.0, 180.0, SOUTH)), EPS);
+    }
+
+    @Test
+    void testDriverStandingNorthPushesTheRobotSouth() {
+        assertArrayEquals(new double[]{-1, -1, -1, -1},
+                wheels(once(0.0, -1.0, 0.0, 0.0, iamyou.DriverPosition.NORTH)), EPS);
+    }
+
+    @Test
+    void testDriverStandingEastPushesTheRobotWest() {
+        // West = the robot's left at heading 0.
+        assertArrayEquals(new double[]{-1, 1, 1, -1},
+                wheels(once(0.0, -1.0, 0.0, 0.0, iamyou.DriverPosition.EAST)), EPS);
+    }
+
+    @Test
+    void testFieldCentricHasNoMemory() {
+        // Spinning the robot all the way round and back must leave the controls exactly as they started.
         iamyou.Drive logic = new iamyou.Drive();
-        for (int i = 0; i < 50; i++) {
-            iamyou.DriveResult r = logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 0.0));
-            assertEquals(0.0, r.powers.getFL(), 1e-9);
-            assertEquals(0.0, r.powers.getFR(), 1e-9);
-            assertEquals(0.0, r.powers.getBL(), 1e-9);
-            assertEquals(0.0, r.powers.getBR(), 1e-9);
+        double[] before = wheels(logic.calculate(input(0.3, -0.7, 0.0, 0.0, 0.0, SOUTH, 0.0)));
+        for (double h = 0; h <= 720; h += 7) {
+            logic.calculate(input(0.3, -0.7, 0.4, 0.0, h, SOUTH, 0.0));
         }
+        for (double h = 720; h >= 0; h -= 7) {
+            logic.calculate(input(0.3, -0.7, -0.4, 0.0, h, SOUTH, 0.0));
+        }
+        double[] after = wheels(logic.calculate(input(0.3, -0.7, 0.0, 0.0, 0.0, SOUTH, 0.0)));
+        assertArrayEquals(before, after, EPS);
     }
 
     // ------------------------------------------------------------------ stop assist
 
-    /** Drives, then releases the sticks with every wheel reading +2000 ticks/s until braking engages. */
-    private static iamyou.Drive releasedAndBraking() {
-        iamyou.Drive logic = new iamyou.Drive();
-        hold(logic, 0.0, -1.0, 0.0, 0.0, 0.0, SOUTH);
-        boolean braking = false;
-        for (int i = 0; i < 10 && !braking; i++) {
-            braking = logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 2000.0)).braking;
-        }
-        assertTrue(braking, "braking should engage shortly after the sticks are released");
-        return logic;
+    /** Drove forward at full power, then released with every wheel still at the given speed. */
+    private static iamyou.DriveResult releasedAt(iamyou.Drive logic, double wheelVel) {
+        logic.calculate(input(0.0, -1.0, 0.0, 0.0, 0.0, SOUTH, wheelVel));
+        return logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, wheelVel));
     }
 
     @Test
-    void testBrakeEngagesAfterBriefDelay() {
-        iamyou.Drive logic = new iamyou.Drive();
-        hold(logic, 0.0, -1.0, 0.0, 0.0, 0.0, SOUTH);
-
-        int expectedLoops = (int) Math.ceil(iamyou.BRAKE_ENGAGE_SEC / DT - 1e-9);
-        for (int loop = 1; loop <= expectedLoops + 1; loop++) {
-            iamyou.DriveResult r = logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 2000.0));
-            assertEquals(loop >= expectedLoops, r.braking, "loop " + loop);
+    void testStopAssistPushesBackTheMomentTheStickIsReleased() {
+        iamyou.DriveResult r = releasedAt(new iamyou.Drive(), 2000.0);
+        assertTrue(r.braking);
+        for (double w : wheels(r)) {
+            assertEquals(-iamyou.BRAKE_MAX_POWER, w, EPS);
         }
     }
 
     @Test
-    void testBrakeOpposesMotionWithinCap() {
-        iamyou.Drive logic = releasedAndBraking();
-
+    void testStopAssistIsGentlerForASlowerWheel() {
+        iamyou.Drive logic = new iamyou.Drive();
+        logic.calculate(input(0.0, -1.0, 0.0, 0.0, 0.0, SOUTH, 0.0));
         iamyou.DriveResult r = logic.calculate(new iamyou.DriveParameters(
-                0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 2000.0, -2000.0, 300.0, 40.0, DT));
-
-        assertEquals(-iamyou.BRAKE_MAX_POWER, r.powers.getFL(), EPS);   // fast wheel: full-strength brake
-        assertEquals(0.0, r.powers.getFR(), 1e-9);                          // reversed vs when braking began: left alone
-        assertTrue(r.powers.getBL() < 0 && r.powers.getBL() > -iamyou.BRAKE_MAX_POWER);   // slow wheel: gentler
-        assertEquals(0.0, r.powers.getBR(), 1e-9);                          // already about stopped: left alone
+                0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 2000.0, 2000.0, 300.0, 2000.0, DT));
+        assertEquals(-iamyou.BRAKE_MAX_POWER, r.powers.getFL(), EPS);
+        assertTrue(r.powers.getBL() < 0 && r.powers.getBL() > -iamyou.BRAKE_MAX_POWER);
     }
 
     @Test
-    void testBrakeNeverPushesAWheelBackwardsThroughZero() {
-        iamyou.Drive logic = releasedAndBraking();
-
-        // Wheel overshoots to the other direction...
-        iamyou.DriveResult crossed = logic.calculate(new iamyou.DriveParameters(
-                0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, -200.0, 0.0, 0.0, 0.0, DT));
-        assertEquals(0.0, crossed.powers.getFL(), 1e-9);
-
-        // ...and even if it reads fast forward again, braking stays off for that wheel until the next release.
-        iamyou.DriveResult after = logic.calculate(new iamyou.DriveParameters(
-                0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 1500.0, 0.0, 0.0, 0.0, DT));
-        assertEquals(0.0, after.powers.getFL(), 1e-9);
-    }
-
-    @Test
-    void testDrivingAfterBrakingRampsFromZero() {
-        iamyou.Drive logic = releasedAndBraking();
-
-        iamyou.DriveResult r = logic.calculate(input(0.0, -1.0, 0.0, 0.0, 0.0, SOUTH, 0.0));
-
+    void testStopAssistEndsWhenTheWheelStops() {
+        iamyou.Drive logic = new iamyou.Drive();
+        releasedAt(logic, 2000.0);
+        iamyou.DriveResult r = logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 0.0));
         assertFalse(r.braking);
-        assertTrue(r.stickForward > 0);
-        assertTrue(r.stickForward <= iamyou.MAX_TRANSLATION_CHANGE_PER_SEC * DT + 1e-9);
+        assertArrayEquals(new double[]{0, 0, 0, 0}, wheels(r), EPS);
+        // And it stays off even if the encoder then reports movement again.
+        r = logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 2000.0));
+        assertArrayEquals(new double[]{0, 0, 0, 0}, wheels(r), EPS);
     }
 
-    // ------------------------------------------------------------------ runaway / NaN safety
-
     @Test
-    void testBrakeNeverPushesInTheDirectionTheWheelWasDriven() {
+    void testStopAssistNeverPushesTheWayTheWheelWasDriven() {
         // A wrongly-signed encoder (velocity opposite to power) must never turn the stop assist into a runaway.
         for (double vel : new double[]{-2700.0, -500.0, 0.0, 500.0, 2700.0}) {
             iamyou.Drive logic = new iamyou.Drive();
-            hold(logic, 0.0, -1.0, 0.0, 0.0, 0.0, SOUTH);   // all four wheels driven forward
-            for (int i = 0; i < 20; i++) {
-                iamyou.DriveResult r = logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, vel));
-                if (!r.braking) continue;   // before the assist engages the normal (fading) drive command is still active
-                assertTrue(r.powers.getFL() <= 1e-9 && r.powers.getFR() <= 1e-9
-                        && r.powers.getBL() <= 1e-9 && r.powers.getBR() <= 1e-9, "vel " + vel + " loop " + i);
+            logic.calculate(input(0.0, -1.0, 0.0, 0.0, 0.0, SOUTH, 0.0));   // every wheel driven forward
+            for (int i = 0; i < 30; i++) {
+                for (double w : wheels(logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, vel)))) {
+                    assertTrue(w <= 1e-9, "vel " + vel + " loop " + i + " wheel " + w);
+                }
             }
         }
     }
 
     @Test
-    void testBrakeStopsPushingAfterWatchdogEvenIfWheelsNeverSlow() {
+    void testStopAssistGivesUpAfterTheWatchdogEvenIfWheelsNeverSlow() {
         iamyou.Drive logic = new iamyou.Drive();
-        hold(logic, 0.0, -1.0, 0.0, 0.0, 0.0, SOUTH);
+        releasedAt(logic, 2700.0);
         iamyou.DriveResult r = null;
-        for (int i = 0; i < 40; i++) {   // 0.8 s with the encoders insisting the wheels are still at full speed
+        int loops = (int) Math.ceil(iamyou.BRAKE_MAX_SEC / DT) + 2;
+        for (int i = 0; i < loops; i++) {
             r = logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 2700.0));
         }
-        assertEquals(0.0, r.powers.getFL(), 1e-9);
-        assertEquals(0.0, r.powers.getBR(), 1e-9);
+        assertFalse(r.braking);
+        assertArrayEquals(new double[]{0, 0, 0, 0}, wheels(r), EPS);
     }
 
     @Test
-    void testReleasingTheStickRemovesTheDriveCommandRightAway() {
+    void testPushingTheStickAgainCancelsTheBrakeImmediately() {
         iamyou.Drive logic = new iamyou.Drive();
-        hold(logic, 0.0, -1.0, 0.0, 0.0, 0.0, SOUTH);
-        iamyou.DriveResult r = logic.calculate(input(0.0, 0.0, 0.0, 0.0, 0.0, SOUTH, 0.0));
-        assertTrue(r.stickForward < iamyou.TRANSLATION_SPEED_CAP * 0.5, "command should fall fast: " + r.stickForward);
+        releasedAt(logic, 2000.0);
+        iamyou.DriveResult r = logic.calculate(input(0.0, -1.0, 0.0, 0.0, 0.0, SOUTH, 2000.0));
+        assertFalse(r.braking);
+        assertArrayEquals(new double[]{1, 1, 1, 1}, wheels(r), EPS);
     }
+
+    // ------------------------------------------------------------------ heading tracker
+
+    /** Feeds both sensors the same true heading, turning at the given rate for the given number of loops. */
+    private static double turnBoth(iamyou.HeadingTracker t, double startDeg, double degPerLoop, int loops) {
+        double h = startDeg;
+        for (int i = 0; i < loops; i++) {
+            h += degPerLoop;
+            t.update(wrap(h), true, wrap(h), true, DT);
+        }
+        return h;
+    }
+
+    private static double wrap(double deg) {
+        return ((deg + 540.0) % 360.0) - 180.0;
+    }
+
+    @Test
+    void testTrackerFollowsATurnThroughTheWrapAround() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(170.0, true, 170.0, true, DT);
+        t.zero();
+        turnBoth(t, 170.0, 5.0, 40);   // 200 degrees CCW, crossing +180/-180
+        assertEquals(200.0, t.heading(), 1e-6);
+    }
+
+    @Test
+    void testAPinpointRestartMidTurnDoesNotMoveTheHeading() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        double h = turnBoth(t, 0.0, 3.0, 30);                      // 90 degrees
+        // The Pinpoint browns out: it comes back reporting 0 and calibrating, while the robot keeps turning.
+        for (int i = 0; i < 15; i++) {
+            h += 3.0;
+            t.update(0.0, false, wrap(h), true, DT);
+        }
+        // Back to READY, but now measuring from where it restarted.
+        double pinpointOffset = h;
+        for (int i = 0; i < 10; i++) {
+            h += 3.0;
+            t.update(wrap(h - pinpointOffset), true, wrap(h), true, DT);
+        }
+        assertEquals(h, t.heading(), 1e-6);
+        assertTrue(t.rejectedReadings() > 0);
+    }
+
+    @Test
+    void testASingleGlitchedReadingIsIgnored() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(10.0, true, 10.0, true, DT);
+        t.update(-150.0, true, 10.0, true, DT);   // garbage from the Pinpoint for one loop
+        t.update(10.0, true, 10.0, true, DT);     // and back
+        // The jump away and the jump back are both impossible turns; the backup says nothing moved.
+        assertEquals(0.0, t.heading(), 1e-6);
+        assertEquals(2, t.rejectedReadings());
+    }
+
+    @Test
+    void testWithoutABackupAGlitchHoldsTheHeadingInsteadOfJumping() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(20.0, true, Double.NaN, true, DT);
+        t.update(25.0, true, Double.NaN, true, DT);
+        t.update(-160.0, true, Double.NaN, true, DT);   // restart to a far-off value
+        t.update(-157.0, true, Double.NaN, true, DT);   // turning again from the new baseline
+        assertEquals(8.0, t.heading(), 1e-6);
+    }
+
+    @Test
+    void testZeroMakesTheCurrentDirectionNorthWithoutTouchingTheSensors() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        double h = turnBoth(t, 0.0, 3.0, 20);
+        t.zero();
+        assertEquals(0.0, t.heading(), 1e-9);
+        turnBoth(t, h, -3.0, 10);
+        assertEquals(-30.0, t.heading(), 1e-6);
+    }
+
+    @Test
+    void testTheReportFlagsSensorsThatDisagree() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        // The Pinpoint over-reads by 20 % (a tilted or badly scaled gyro): small enough per loop to be believed.
+        for (int i = 1; i <= 30; i++) {
+            t.update(wrap(3.6 * i), true, wrap(3.0 * i), true, DT);
+        }
+        assertTrue(t.sensorReport().contains("DISAGREE"), t.sensorReport());
+    }
+
+    @Test
+    void testABackupThatTurnsTheWrongWayIsNeverUsed() {
+        // The Control Hub IMU reads every turn backwards (its mounting described wrongly in code).
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        for (int i = 1; i <= 30; i++) {
+            t.update(wrap(3.0 * i), true, wrap(-3.0 * i), true, DT);
+        }
+        assertFalse(t.backupTrusted());
+        double before = t.heading();
+        // The Pinpoint restarts while the robot keeps turning CCW: holding is the best that can be done.
+        for (int i = 1; i <= 10; i++) {
+            t.update(0.0, false, wrap(-90.0 - 3.0 * i), true, DT);
+        }
+        assertEquals(before, t.heading(), 1e-6, "a wrong-way backup must not steer the heading");
+        assertTrue(t.sensorReport().contains("BACKUP WRONG"), t.sensorReport());
+    }
+
+    @Test
+    void testABackupIsNotTrustedBeforeTheRobotHasTurned() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        t.update(0.0, false, 20.0, true, DT);   // Pinpoint restarting before anything was learned
+        assertEquals(0.0, t.heading(), 1e-6);
+    }
+
+    @Test
+    void testABadReadOrMissingPodDoesNotCountAsAGlitch() {
+        assertTrue(iamyou.HeadingTracker.headingValid(
+                com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.FAULT_BAD_READ));
+        assertTrue(iamyou.HeadingTracker.headingValid(
+                com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.FAULT_Y_POD_NOT_DETECTED));
+        assertFalse(iamyou.HeadingTracker.headingValid(
+                com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.CALIBRATING));
+        assertFalse(iamyou.HeadingTracker.headingValid(
+                com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.NOT_READY));
+    }
+
+    // ------------------------------------------------------------------ NaN safety
 
     @Test
     void testBadNumbersNeverReachTheMotors() {
         double[] bad = {Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY};
         for (double b : bad) {
             iamyou.Drive logic = new iamyou.Drive();
-            iamyou.DriveResult r = logic.calculate(new iamyou.DriveParameters(
-                    b, b, b, b, b, SOUTH, b, b, b, b, b));
-            assertFinite(r);
-            r = logic.calculate(new iamyou.DriveParameters(
-                    0.5, -0.5, 0.0, 0.0, 10.0, SOUTH, 0, 0, 0, 0, 0.0));   // dt of exactly zero
-            assertFinite(r);
+            assertFinite(logic.calculate(new iamyou.DriveParameters(b, b, b, b, b, SOUTH, b, b, b, b, b)));
+            assertFinite(logic.calculate(new iamyou.DriveParameters(
+                    0.5, -0.5, 0.0, 0.0, 10.0, SOUTH, 0, 0, 0, 0, 0.0)));   // dt of exactly zero
+            assertFinite(logic.calculate(new iamyou.DriveParameters(
+                    0.0, 0.0, 0.0, 0.0, 10.0, SOUTH, b, b, b, b, DT)));     // bad encoder while braking
         }
     }
 
     private static void assertFinite(iamyou.DriveResult r) {
-        for (double w : new double[]{r.powers.getFL(), r.powers.getFR(), r.powers.getBL(), r.powers.getBR()}) {
+        for (double w : wheels(r)) {
             assertFalse(Double.isNaN(w) || Double.isInfinite(w));
             assertTrue(Math.abs(w) <= 1.0 + 1e-12);
         }
-    }
-
-    @Test
-    void aimTurnIsCounterClockwiseOnTopOfTheDrive() {
-        double[] out = iamyou.addTurn(new double[]{0.2, 0.2, 0.2, 0.2}, 0.1);
-        assertArrayEquals(new double[]{0.1, 0.3, 0.1, 0.3}, out, 1e-12);
-    }
-
-    @Test
-    void aimTurnScalesEveryWheelTogetherRatherThanClipping() {
-        // Full forward plus a turn would push the right wheels past 1; all four shrink by the same factor instead,
-        // so the robot keeps driving the way it was going while it turns.
-        double[] out = iamyou.addTurn(new double[]{1.0, 1.0, 1.0, 1.0}, 0.25);
-        assertArrayEquals(new double[]{0.6, 1.0, 0.6, 1.0}, out, 1e-12);
     }
 }

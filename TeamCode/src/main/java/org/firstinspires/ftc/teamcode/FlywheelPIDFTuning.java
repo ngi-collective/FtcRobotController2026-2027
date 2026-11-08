@@ -17,7 +17,7 @@ public class FlywheelPIDFTuning extends OpMode {
     int stepIndex = 1;
 
     public void init(){
-        Flywheel = hardwareMap.get(DcMotorEx.class,"Flywheel");
+        Flywheel = hardwareMap.get(DcMotorEx.class,"Outtake");
         Flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         Flywheel.setDirection(DcMotorSimple.Direction.REVERSE);
 //        PIDCoefficients coefficients = new PIDCoefficients(P, .0, .0);
