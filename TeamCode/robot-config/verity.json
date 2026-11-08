@@ -20,8 +20,8 @@
   "imu": { "name": "imu" },
   "pinpoint": {
     "name": "pinpoint",
-    "xPodLeftMetres": -0.09623,
-    "yPodForwardMetres": -0.02828,
+    "xPodLeftMetres": -0.096235,
+    "yPodForwardMetres": -0.028278,
     "ticksPerMm": 19.89436789,
     "xPodReversed": false,
     "yPodReversed": true

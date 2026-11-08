@@ -61,11 +61,11 @@ public class DriveHardware {
         DcMotorEx bl = hardwareMap.get(DcMotorEx.class, BL_NAME);
         DcMotorEx br = hardwareMap.get(DcMotorEx.class, BR_NAME);
 
-        // Measured on the real robot with Pedro's Mecanum Tuner; kept in one place, Constants.drivetrainConfig.
-        fl.setDirection(Constants.drivetrainConfig.frontLeftDirection.get());
-        bl.setDirection(Constants.drivetrainConfig.backLeftDirection.get());
-        fr.setDirection(Constants.drivetrainConfig.frontRightDirection.get());
-        br.setDirection(Constants.drivetrainConfig.backRightDirection.get());
+        // The right-side motors are the mirrored ones, as in pedroPathing's Constants.
+        fl.setDirection(DcMotorSimple.Direction.FORWARD);
+        bl.setDirection(DcMotorSimple.Direction.FORWARD);
+        fr.setDirection(DcMotorSimple.Direction.REVERSE);
+        br.setDirection(DcMotorSimple.Direction.REVERSE);
 
         return new DriveHardware(fl, fr, bl, br);
     }

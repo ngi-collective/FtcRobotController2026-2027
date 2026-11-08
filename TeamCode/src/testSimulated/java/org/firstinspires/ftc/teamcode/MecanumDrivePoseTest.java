@@ -20,7 +20,7 @@ import org.ngicollective.ftcsim.sim.Pose2d;
  * wrong; only the pose says whether the robot went where the driver asked. The first version of
  * the drive model passed every wheel-power test in this module and still turned a full-forward
  * stick into 106 degrees of rotation, because it read the physical shaft frame without accounting
- * for the mirrored left-side mounting.</p>
+ * for one side's mirrored mounting.</p>
  */
 class MecanumDrivePoseTest {
 

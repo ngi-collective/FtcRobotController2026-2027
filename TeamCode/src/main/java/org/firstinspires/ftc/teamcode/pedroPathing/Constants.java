@@ -38,9 +38,9 @@ public class Constants {
         c.backLeftDirection.set(DcMotorSimple.Direction.FORWARD);
         c.backRightDirection.set(DcMotorSimple.Direction.REVERSE);
     });
-    // PLACEHOLDER: the offsets are the SDK sample's (SensorGoBildaPinpoint), and
-    // robot-config/*.json mounts the simulated pods there to match. Replace with PinpointTuner's
-    // output from the real robot, and update the robot-config "pinpoint" blocks to the same mount.
+    // The simulated robot mirrors this: robot-config/*.json mounts its pods at these offsets
+    // (xPodLeftMetres, yPodForwardMetres) with the strafe pod reversed, and mirrors the right-side
+    // drive motors to match drivetrainConfig. Change one, change the other.
     public static PinpointConfig localizerConfig = new PinpointConfig(c -> {
         c.name.set("pinpoint");
         c.podType.set(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);

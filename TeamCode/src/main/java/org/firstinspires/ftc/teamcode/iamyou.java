@@ -126,7 +126,7 @@ public class iamyou extends LinearOpMode {
     protected boolean twoControllers() {
         return false;
     }
-    boolean toggleAprilTagAdjust = true;
+    boolean toggleAprilTagAdjust = false;
 
     /**
      * True = heading comes from the goBILDA Pinpoint instead of the Control Hub's IMU. The Pinpoint is set up from

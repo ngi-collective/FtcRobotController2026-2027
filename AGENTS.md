@@ -369,6 +369,21 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit — 
 - **A routine that ends undoes its own work.** A dashboard session rebuilds the field when an
   OpMode stops, so the last step of an AUTO worth watching is `while (opModeIsActive())` holding
   still — which is also what a real one does while it waits for the buzzer.
+- **The four Pedro AUTOs (`RedLeft`, `RedRight`, `BlueLeft`, `BlueRight`) are one route.**
+  `pedroPathing/AllianceAuto` writes it in red's numbers and turns it half a turn about field
+  centre for blue. Pedro inches are the field frame plus 72, so red is `x < 72` and the walls are
+  at 1.5 and 142.5 (the field is 141 in). Left starts on the audience wall facing the raised CELL;
+  Right starts on the rear wall behind the lowered one and drives round the HIVE frame first.
+  Left finishes facing its alliance-wall FLOWER, Right in the LOADING ZONE. The only balls an AUTO
+  collects are its own GARDEN's line. Nothing is taken from a FLOWER, the other half is out of
+  bounds, and every path keeps the whole chassis, turns included, clear of the FLOWERs and of the
+  frame's foot bar. Each path gives up after 5 s, so a robot held short by a wall still reaches
+  the end of the routine, and the OpMode **ends itself** when the routine does. This is unlike
+  `SweepAndShootAuto`, so the dashboard resets the balls at that moment. The dashboard keeps the
+  robot where the last run left it, so drag it to the `dashboard` line of INIT telemetry (metres)
+  before every run, and load `match-setup`. Placed there, all four finish in 16–22 s. The sim
+  cannot score them, because `Outtake`, `IntakeM` and `IntakeSL/SR` are not the launcher and
+  intake `verity.json` models.
 
 - **A cluster detection is the aim point.** The SDK's cluster origin lands 1.42 in from the centre
   of the CELL opening its tags hang under — an eighth of the opening's height — identically for all

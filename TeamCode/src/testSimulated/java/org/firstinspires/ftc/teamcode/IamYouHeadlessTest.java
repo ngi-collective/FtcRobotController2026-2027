@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.Gamepad;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.junit.After;
 import org.junit.Test;
@@ -152,10 +153,13 @@ public class IamYouHeadlessTest {
         // Half a metre short of red's raised CELL and fifteen degrees clockwise of it: the upward camera sees the
         // cluster from here, and only from about here.
         hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(75.0)));
-        harness.gamepad1().left_bumper = true;   // flywheel on: a toggle, so press and let go
+        // Flywheel on, and X to turn the aimer on: both toggles, so press and let go.
+        harness.gamepad1().left_bumper = true;
+        setX(true);
         for (int tick = 0; tick < 500 && !aimSettled(); tick++) {
             if (tick == 5) {
                 harness.gamepad1().left_bumper = false;
+                setX(false);
             }
             harness.advance(TICK);
             PlainJvmVision.pump();
@@ -170,6 +174,17 @@ public class IamYouHeadlessTest {
 
     private boolean aimSettled() {
         return harness.lastTelemetry().stream().anyMatch(line -> line.startsWith("Aim : ON TARGET"));
+    }
+
+    /**
+     * Sets X the way the Driver Station does. {@code xWasPressed()} only sees edges delivered through
+     * {@link Gamepad#fromByteArray}; writing the field directly never registers a press.
+     */
+    private void setX(boolean pressed) {
+        Gamepad state = new Gamepad();
+        state.copy(harness.gamepad1());
+        state.x = pressed;
+        harness.gamepad1().fromByteArray(state.toByteArray());
     }
 
     @Test
