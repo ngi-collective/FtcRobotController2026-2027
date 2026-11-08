@@ -387,7 +387,7 @@ public class iamyou extends LinearOpMode {
                 intakeServoRight.setPower(rightServo);
                 // Staging feeds forward on intake and backward on outtake, with the intake motor.
                 double stagingPower = Math.max(-1.0, Math.min(1.0, intakeResult.power));
-                staging.setPower(1);
+                staging.setPower(intake.getPower());
                 lastIntakePower = intakeResult.power;
 
                 // ---- Flywheel ----
