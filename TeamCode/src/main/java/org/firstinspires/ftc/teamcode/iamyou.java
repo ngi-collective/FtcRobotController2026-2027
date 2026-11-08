@@ -388,7 +388,14 @@ public class iamyou extends LinearOpMode {
 
                 // Staging feeds forward on intake and backward on outtake, with the intake motor.
                 double stagingPower = Math.max(-1.0, Math.min(1.0, intakeResult.power));
-                staging.setPower(intake.getPower());
+
+                //seperate staging from intake (because why not????)
+                if (gamepad1.a){
+                    staging.setPower(1.0);
+                }else if (gamepad1.b){
+                    staging.setPower(-1.0);
+                }
+
                 lastIntakePower = intakeResult.power;
 
                 // ---- Flywheel ----
