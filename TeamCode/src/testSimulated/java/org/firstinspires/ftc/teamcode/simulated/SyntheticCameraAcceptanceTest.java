@@ -73,9 +73,9 @@ public class SyntheticCameraAcceptanceTest {
         assertNotNull("the simulated robot should declare Webcam 1",
                 hardware.tryGet(WebcamName.class, "Webcam 1"));
 
-        // Half a metre short of the red HIVE's raised CELL, so the upward-pointing camera looks
-        // into the tags on its underside.
-        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(90.0)));
+        // About 0.9 m short of the red HIVE's raised CELL, so the forward camera, tilted 45
+        // degrees up, looks into the tags hanging under it.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(90.0)));
 
         // Verbatim stock sample: it builds its own VisionPortal from hardwareMap.get(...) and
         // nothing in it knows this framework exists.

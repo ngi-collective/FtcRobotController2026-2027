@@ -24,9 +24,9 @@ import java.util.List;
  *
  * <h2>Where it can see from</h2>
  *
- * <p>The camera points straight up (see {@link LaunchGeometry}), so the cluster is in view only
- * from about half a metre short of it and closer. That is inside the launcher's minimum range:
- * this aims, but a robot standing where it can aim cannot yet shoot.</p>
+ * <p>The camera looks forward and 45&deg; up (see {@link LaunchGeometry}), so the cluster is in
+ * view from about 0.46&nbsp;m to about 2&nbsp;m short of the opening, which covers the
+ * launcher's whole range: a robot standing where it can aim can also shoot.</p>
  *
  * <p>The alliance is fixed when this is built, so an OpMode that picks it during INIT builds
  * this once the pick is final.</p>
@@ -104,7 +104,7 @@ public class CellAimer {
             return latest;
         }
 
-        LensMount.Sighting cell = raisedCell(fresh);
+        LensMount.Sighting cell = raisedCell(fresh, red, mount);
         if (cell == null) {
             pointedFrames = 0;
             framesWithoutCell++;
@@ -152,13 +152,14 @@ public class CellAimer {
     }
 
     /**
-     * The raised CELL of this alliance, in the robot's frame, or null if none is in view.
+     * The raised CELL of an alliance, in the robot's frame, or null if none is in view.
      *
      * <p>Only cluster detections: on BioBuzz every tag belongs to one, so a lone tag is from
      * somebody's practice field. Raised by height, because a HIVE's two CELLs share a normal and
-     * the camera sees both; the higher of two if both somehow pass.</p>
+     * the camera can see both; the higher of two if both somehow pass.</p>
      */
-    private LensMount.Sighting raisedCell(List<AprilTagDetection> detections) {
+    public static LensMount.Sighting raisedCell(List<AprilTagDetection> detections, boolean red,
+                                                LensMount mount) {
         LensMount.Sighting best = null;
         for (AprilTagDetection detection : detections) {
             if (!(detection instanceof AprilTagClusterDetection)) {

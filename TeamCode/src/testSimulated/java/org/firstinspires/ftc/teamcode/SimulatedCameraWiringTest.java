@@ -39,9 +39,9 @@ class SimulatedCameraWiringTest {
         FakeWebcam webcam = hardware.webcam("Webcam 1");
         assertNotNull(webcam.frameSource());
 
-        // Half a metre short of the red HIVE's raised CELL, facing it; verity.json points the
-        // camera straight up, so this close is the only place it sees plates hanging 4 feet up.
-        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(90.0)));
+        // About 0.9 m short of the red HIVE's raised CELL, facing it; verity.json tilts the
+        // camera 45 degrees up, which frames plates hanging 4 feet up from here.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(90.0)));
 
         SyntheticFrame frame = new SyntheticFrame(640, 480);
         webcam.frameSource().render(frame);
@@ -52,7 +52,7 @@ class SimulatedCameraWiringTest {
 
     @Test
     void aScenariosBallsAreWhereABallCameraCouldSeeThem() {
-        // Not through verity's camera, and that is the point. Its mount points straight up at
+        // Not through verity's camera, and that is the point. Its mount looks 45 degrees up at
         // plates hanging 35 to 50 inches up; balls on the floor sit a few degrees *below* the
         // horizon, so one camera cannot do both jobs on this field. This
         // checks the scenario's ball positions against the camera that would hunt them.
@@ -97,13 +97,12 @@ class SimulatedCameraWiringTest {
         FakeHardwareMap hardware = robotLookingAt("aimed-shot");
         SyntheticFrame frame = new SyntheticFrame(640, 480);
 
-        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(90.0)));
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(90.0)));
         hardware.webcam("Webcam 1").frameSource().render(frame);
         double facingTheTags = darkFraction(frame);
 
-        // Same spot, nose at the far wall: the camera, ahead of the centre, swings away from the
-        // CELL and out from under it.
-        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(-90.0)));
+        // Same spot, nose at the far wall: the camera looks away from the CELL.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(-90.0)));
         hardware.webcam("Webcam 1").frameSource().render(frame);
         double facingAway = darkFraction(frame);
 

@@ -6,6 +6,6 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 @Autonomous(name = "BlueRight", group = "Autonomous")
 public class BlueRight extends AllianceAuto {
     public BlueRight() {
-        super(BLUE, Start.BEHIND_LOWERED_CELL);
+        super(BLUE, Start.BEHIND_LOWERED_CELL, Routine.FULL);
     }
 }

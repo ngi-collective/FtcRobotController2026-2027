@@ -37,7 +37,7 @@ import java.util.List;
  *   Expansion Hub motors .... 0 IntakeM, 1 Outtake (the flywheel)
  *   Servos .................. IntakeSL, IntakeSR, Staging (continuous rotation; they always spin with IntakeM)
  *   Control Hub I2C bus 0 ... imu (the hub's built-in IMU; the only heading source, there is no odometry)
- *   USB ..................... Webcam 1 (points straight up at the CELLs' tags; optional, aiming is off without it)
+ *   USB ..................... Webcam 1 (looks forward, tilted 45 degrees up at the CELLs' tags; optional, aiming is off without it)
  *
  * Driver controls (gamepad 1):
  *   Left stick .......... drive (field-centric)
@@ -70,21 +70,21 @@ public class iamyou extends LinearOpMode {
     static final String FR_NAME = "FR";
     static final String BL_NAME = "BL";
     static final String BR_NAME = "BR";
-    static final String INTAKE_NAME = "IntakeM";
-    static final String INTAKE_SERVO_LEFT_NAME = "IntakeSL";
-    static final String INTAKE_SERVO_RIGHT_NAME = "IntakeSR";
-    static final String STAGING_NAME = "Staging";
-    static final String OUTTAKE_NAME = "Outtake";
+    public static final String INTAKE_NAME = "IntakeM";
+    public static final String INTAKE_SERVO_LEFT_NAME = "IntakeSL";
+    public static final String INTAKE_SERVO_RIGHT_NAME = "IntakeSR";
+    public static final String STAGING_NAME = "Staging";
+    public static final String OUTTAKE_NAME = "Outtake";
     /** The Control Hub's built-in IMU. There is no odometry, so this is the only heading source. */
     static final String IMU_NAME = "imu";
-    static final String WEBCAM_NAME = "Webcam 1";
+    public static final String WEBCAM_NAME = "Webcam 1";
 
     /**
      * Flip this if positive power (right trigger) spits pieces out instead of pulling them in.
      * With a big-gear-drives-small-gear mesh the roller turns opposite to the motor, so
      * the first run may need this set to true.
      */
-    static final boolean INTAKE_REVERSED = true;
+    public static final boolean INTAKE_REVERSED = true;
 
     /**
      * Which way each intake servo spins (+1 or -1) while intaking (right trigger) and while outtaking (right bumper),
@@ -102,10 +102,10 @@ public class iamyou extends LinearOpMode {
     static final double LEFT_SERVO_TRIM  = 1.0;
     static final double RIGHT_SERVO_TRIM = 1.0;
     /** Flip this if Staging moves pieces away from the flywheel while intaking. */
-    static final boolean STAGING_REVERSED = true;
+    public static final boolean STAGING_REVERSED = true;
 
     /** Flip this if the flywheel spins backwards. */
-    static final boolean OUTTAKE_REVERSED = true;
+    public static final boolean OUTTAKE_REVERSED = true;
 
     /** A heading sensor tilted more than this (pitch or roll) cannot measure the robot's turn correctly. */
     private static final double LEVEL_TOLERANCE_DEG = 10.0;

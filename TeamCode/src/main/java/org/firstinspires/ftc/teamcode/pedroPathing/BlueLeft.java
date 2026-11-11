@@ -6,6 +6,6 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 @Autonomous(name = "BlueLeft", group = "Autonomous")
 public class BlueLeft extends AllianceAuto {
     public BlueLeft() {
-        super(BLUE, Start.FACING_RAISED_CELL);
+        super(BLUE, Start.FACING_RAISED_CELL, Routine.FULL);
     }
 }

@@ -374,16 +374,24 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit — 
   centre for blue. Pedro inches are the field frame plus 72, so red is `x < 72` and the walls are
   at 1.5 and 142.5 (the field is 141 in). Left starts on the audience wall facing the raised CELL;
   Right starts on the rear wall behind the lowered one and drives round the HIVE frame first.
-  Left finishes facing its alliance-wall FLOWER, Right in the LOADING ZONE. The only balls an AUTO
-  collects are its own GARDEN's line. Nothing is taken from a FLOWER, the other half is out of
-  bounds, and every path keeps the whole chassis, turns included, clear of the FLOWERs and of the
-  frame's foot bar. Each path gives up after 5 s, so a robot held short by a wall still reaches
-  the end of the routine, and the OpMode **ends itself** when the routine does. This is unlike
+  Then all four shoot the pre-loads, drive forward along their GARDEN's line facing the alliance
+  wall, run the intake against their alliance-wall FLOWER's retrieval opening for 1.5 s, shoot
+  again and PARK in the LOADING ZONE. Nothing else is collected from, the other half is out of
+  bounds, and every path keeps the whole chassis, turns included, clear of the rear-wall FLOWER
+  and the frame's foot bar. Each path gives up after 5 s, so a robot held short by a wall still
+  reaches the end, and the OpMode **ends itself** when the routine does. This is unlike
   `SweepAndShootAuto`, so the dashboard resets the balls at that moment. The dashboard keeps the
   robot where the last run left it, so drag it to the `dashboard` line of INIT telemetry (metres)
-  before every run, and load `match-setup`. Placed there, all four finish in 16–22 s. The sim
-  cannot score them, because `Outtake`, `IntakeM` and `IntakeSL/SR` are not the launcher and
-  intake `verity.json` models.
+  before every run, and load `match-setup`. Placed there, Left finishes in 23.5 s and Right in
+  27.6 s, which leaves 2.4 s of a 30 s AUTO. The sim cannot score them, because `Outtake`,
+  `IntakeM` and `IntakeSL/SR` are not the launcher and intake `verity.json` models.
+  The four `… Preload` AUTOs are the same class with `Routine.PRELOAD_AND_PARK`: they shoot the
+  pre-loads from where they were set down and PARK, Left at once (8 s) and Right after a 15 s wait
+  (22 s). Right shoots from the rear wall, at the lowered CELL.
+  The four `… Tip-Aware` AUTOs (`TipAwareAuto`) read through INIT which side their HIVE's raised
+  CELL faces and shoot from that side; see CLAUDE.md and
+  `docs/adr/0007-the-camera-looks-forward-and-up.md`. `tipped-match-setup` is `match-setup` with
+  both HIVEs tipped.
 
 - **A cluster detection is the aim point.** The SDK's cluster origin lands 1.42 in from the centre
   of the CELL opening its tags hang under — an eighth of the opening's height — identically for all
@@ -391,8 +399,8 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit — 
   member offsets, FIRST's CAD and the manual's CELL dimensions agree there and none of them
   mentions the others.
 - **Never use `ftcPose.range`, `bearing` or `elevation` on this robot.** They are measured in the
-  camera's own frame — `range` is `hypot(x, y)` with the vertical dropped — and the camera aims up
-  35°, so all three are wrong about the field by a plausible-looking amount. Use `x`, `y`, `z` and
+  camera's own frame — `range` is `hypot(x, y)` with the vertical dropped — and the camera looks
+  forward tilted 45° up, so all three are wrong about the field by a plausible-looking amount. Use `x`, `y`, `z` and
   level them through the mount.
 - **`robotPose` is useless this season.** The SDK declares all four BioBuzz clusters at
   `fieldPosition = (0,0,0)` with an identity orientation, so anything absolute must be built from

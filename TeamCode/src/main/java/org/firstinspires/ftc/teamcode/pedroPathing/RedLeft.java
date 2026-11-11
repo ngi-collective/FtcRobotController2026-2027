@@ -6,6 +6,6 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 @Autonomous(name = "RedLeft", group = "Autonomous")
 public class RedLeft extends AllianceAuto {
     public RedLeft() {
-        super(RED, Start.FACING_RAISED_CELL);
+        super(RED, Start.FACING_RAISED_CELL, Routine.FULL);
     }
 }

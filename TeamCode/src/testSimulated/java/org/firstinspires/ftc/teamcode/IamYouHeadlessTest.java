@@ -156,9 +156,9 @@ public class IamYouHeadlessTest {
         await(() -> harness.lastTelemetry().stream().anyMatch(line -> line.startsWith("Aim : ")),
                 () -> "the OpMode never reached its main loop; last telemetry was " + harness.lastTelemetry());
 
-        // Half a metre short of red's raised CELL and fifteen degrees clockwise of it: the upward camera sees the
-        // cluster from here, and only from about here.
-        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(75.0)));
+        // About 0.9 m short of red's raised CELL and fifteen degrees clockwise of it, well inside the 0.46-2 m band
+        // the forward, 45-degree camera frames the cluster in.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(75.0)));
         // Flywheel on, and X to turn the aimer on: both toggles, so press and let go.
         harness.gamepad1().left_bumper = true;
         setX(true);

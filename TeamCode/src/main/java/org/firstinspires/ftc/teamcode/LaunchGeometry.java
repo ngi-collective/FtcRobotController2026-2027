@@ -22,18 +22,19 @@ package org.firstinspires.ftc.teamcode;
 public final class LaunchGeometry {
 
     /**
-     * Measured on the robot: the lens is on the front of the chassis, 12.5&nbsp;in up, pointing
-     * straight up at the undersides of the CELLs.
+     * The lens is on the front of the chassis, 12.5&nbsp;in up, looking forward and tilted
+     * 45&deg; up (docs/adr/0007-the-camera-looks-forward-and-up.md).
      *
-     * <p>Pointing straight up, yaw is the way the top edge of the image faces: &minus;90&deg; is
-     * toward the robot's left. That one is assumed rather than checked on the robot; get it wrong
-     * and every turn toward a CELL is a turn away from it.</p>
+     * <p>Tilted so that it sees its alliance's raised CELL from the AUTO start squares, about
+     * 1.45&nbsp;m away, and from anywhere in the launcher's range, about 0.46&ndash;2&nbsp;m from
+     * the opening. The 45&deg; is the design figure; replace it, and the same number in
+     * {@code verity.json}, with the bracket's measured angle.</p>
      */
     private static final double CAMERA_FORWARD_METRES = 0.16;
     private static final double CAMERA_LEFT_METRES = 0.0;
     private static final double CAMERA_HEIGHT_METRES = 0.3175;
-    private static final double CAMERA_YAW_DEGREES = -90.0;
-    private static final double CAMERA_PITCH_DEGREES = 90.0;
+    private static final double CAMERA_YAW_DEGREES = 0.0;
+    private static final double CAMERA_PITCH_DEGREES = 45.0;
     private static final double CAMERA_ROLL_DEGREES = 0.0;
 
     /**

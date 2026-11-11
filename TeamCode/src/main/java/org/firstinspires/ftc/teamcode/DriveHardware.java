@@ -62,10 +62,10 @@ public class DriveHardware {
         DcMotorEx br = hardwareMap.get(DcMotorEx.class, BR_NAME);
 
         // The right-side motors are the mirrored ones, as in pedroPathing's Constants.
-        fl.setDirection(DcMotorSimple.Direction.FORWARD);
-        bl.setDirection(DcMotorSimple.Direction.FORWARD);
-        fr.setDirection(DcMotorSimple.Direction.REVERSE);
-        br.setDirection(DcMotorSimple.Direction.REVERSE);
+        fl.setDirection(DcMotor.Direction.FORWARD);
+        bl.setDirection(DcMotor.Direction.FORWARD);
+        fr.setDirection(DcMotor.Direction.REVERSE);
+        br.setDirection(DcMotor.Direction.REVERSE);
 
         return new DriveHardware(fl, fr, bl, br);
     }

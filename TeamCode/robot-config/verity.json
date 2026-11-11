@@ -31,8 +31,8 @@
     "forwardMetres": 0.16,
     "leftMetres": 0.0,
     "heightMetres": 0.3175,
-    "yawDegrees": -90.0,
-    "pitchDegrees": 90.0,
+    "yawDegrees": 0.0,
+    "pitchDegrees": 45.0,
     "rollDegrees": 0.0,
     "framesPerSecond": 30.0
   },

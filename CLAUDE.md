@@ -68,7 +68,8 @@ What this repository supplies to it:
 - **`TeamCode/robot-layouts/*.json` is cosmetic**: mesh, scale, label offsets.
 - **`TeamCode/scenarios/*.json`** stage the field: balls on the tiles or in a named CELL, HIVE tip
   states. `match-staging` is the manual's setup (6-6 before anyone drives); `tipping-hive` is two
-  good shots short of a TIP; `auto-sweep` and `aimed-shot` back the autonomous and aiming tests.
+  good shots short of a TIP; `auto-sweep` and `aimed-shot` back the autonomous and aiming tests;
+  `tipped-match-setup` is `match-setup` with both HIVEs tipped, for the tip-aware AUTOs.
 
 Facts about the simulation that decide how to write a test here:
 
@@ -118,15 +119,26 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit, as
   member offsets, FIRST's CAD and the manual's CELL dimensions agree there and none of them
   mentions the others.
 - **Never use `ftcPose.range`, `bearing` or `elevation` on this robot.** They are measured in the
-  camera's own frame — `range` is `hypot(x, y)` with the vertical dropped — and the camera points
-  straight up (12.5 in off the tiles, image top toward the robot's left), so all three describe
-  the ceiling rather than the field. Use `x`, `y`, `z` and level them through the mount.
-- **The upward camera can aim but cannot shoot.** It sees a raised CELL's cluster only from about
-  0.5 m short of it and closer, and the 75° lob needs the muzzle 0.39 m back, which is 0.63 m
-  from the robot's centre: the two never overlap. `CellAimer` turns the robot onto the CELL from
-  inside that band (`CellAimerAcceptanceTest`); `AimedLauncherAcceptanceTest` is `@Ignore`d until
-  the mount or the launch angle gives an overlap. The image-top direction is assumed, not
-  checked on the robot: if `CellAimer` turns away from the CELL, that is the first suspect.
+  camera's own frame — `range` is `hypot(x, y)` with the vertical dropped — and the camera looks
+  forward tilted 45° up (12.5 in off the tiles), so all three are wrong about the field by a
+  plausible-looking amount. Use `x`, `y`, `z` and level them through the mount.
+- **The camera looks forward and 45° up** (`docs/adr/0007-the-camera-looks-forward-and-up.md`).
+  It frames a raised CELL's cluster from about 0.46 m to about 2 m short of the opening, which
+  covers the launcher's range, and sees it from both AUTO start squares at about 1.45 m. 45° is
+  the design figure: when the bracket is measured, change `verity.json` and `LaunchGeometry`
+  together (`LaunchGeometryTest` holds them equal).
+- **A camera can only confirm that a HIVE faces it.** All four of a HIVE's tags face the side its
+  raised CELL opens toward and swing round with a TIP; from the other side the plates are
+  edge-on. So "tipped away from me" is read as frames arriving with no raised cluster in them
+  (`RaisedCellWatch`), and a camera sending no frames is never read as a TIP. Anything blocking
+  the view reads as a TIP too.
+- **The `… Tip-Aware` AUTOs** (`TipAwareAuto`) read that through INIT, commit at START, shoot
+  from the side the raised CELL faces (`SHOOT`, or `REAR_START` against the wall), and look again
+  before every shot: turned away with 18 s left, they drive round (7–8 s); with less, they park
+  without shooting. Only a robot shooting from the front collects, one trip per shot: GARDEN,
+  shoot, then FLOWER, shoot, each only if it and the park still fit. In practice the FLOWER
+  trip never fits after the GARDEN one, and a trip from the rear does not fit at all. `TipAwareAutoAcceptanceTest` runs all four starts
+  on `match-setup` and `tipped-match-setup`, about 4 minutes in real time.
 - **`robotPose` is useless this season.** The SDK declares all four BioBuzz clusters at
   `fieldPosition = (0,0,0)` with an identity orientation, so anything absolute must be built from
   relative measurements.

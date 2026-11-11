@@ -50,13 +50,14 @@ public class CellAimerAcceptanceTest {
     private static final double TICK_SECONDS = 0.02;
 
     /**
-     * Close under the red HIVE's raised CELL, on its centre line.
+     * Short of the red HIVE's raised CELL, on its centre line.
      *
-     * <p>Close because the camera points straight up and sees the cluster only from about half a
-     * metre short of it; this is inside that band, and turning in place keeps it there.</p>
+     * <p>About 0.9&nbsp;m short of the opening: the camera looks forward and 45&deg; up and frames
+     * the cluster from about 0.46&nbsp;m to about 2&nbsp;m, so this is well inside that band, and
+     * turning in place keeps it there.</p>
      */
     private static final double START_X = -0.324;
-    private static final double START_Y = -0.85;
+    private static final double START_Y = -1.30;
 
     /** Aims twice: once at nothing, and again after the test presses A. */
     public static class AimTwice extends LinearOpMode {
