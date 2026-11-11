@@ -272,7 +272,7 @@ class IamYouTest {
         t.update(170.0, true, 170.0, true, DT);
         t.zero();
         turnBoth(t, 170.0, 5.0, 40);   // 200 degrees CCW, crossing +180/-180
-        assertEquals(200.0, t.heading(), 1e-6);
+        assertEquals(-160.0, t.heading(), 1e-6, "200 degrees CCW reads as 160 degrees CW");
     }
 
     @Test
@@ -339,21 +339,75 @@ class IamYouTest {
     }
 
     @Test
-    void testABackupThatTurnsTheWrongWayIsNeverUsed() {
-        // The Control Hub IMU reads every turn backwards (its mounting described wrongly in code).
+    void testABackupThatTurnsTheOtherWayIsNeverUsed() {
+        // The sensors disagree about direction. One of them is backwards, and the tracker cannot know which, so it
+        // must not use the backup at all (a person settles it with the hand-turn check).
         iamyou.HeadingTracker t = new iamyou.HeadingTracker();
         t.update(0.0, true, 0.0, true, DT);
         for (int i = 1; i <= 30; i++) {
             t.update(wrap(3.0 * i), true, wrap(-3.0 * i), true, DT);
         }
         assertFalse(t.backupTrusted());
-        double before = t.heading();
-        // The Pinpoint restarts while the robot keeps turning CCW: holding is the best that can be done.
         for (int i = 1; i <= 10; i++) {
-            t.update(0.0, false, wrap(-90.0 - 3.0 * i), true, DT);
+            t.update(90.0, false, wrap(-90.0 - 3.0 * i), true, DT);
         }
-        assertEquals(before, t.heading(), 1e-6, "a wrong-way backup must not steer the heading");
+        assertEquals(90.0, t.heading(), 1e-6, "a backup turning the other way must not steer the heading");
+        assertTrue(t.sensorReport().contains("OPPOSITE WAYS"), t.sensorReport());
+    }
+
+    @Test
+    void testAFailedBackupReadIsNotATurn() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 30.0, true, DT);
+        double h = 0.0;
+        for (int i = 1; i <= 20; i++) {                        // learn: both turn the same way
+            h += 3.0;
+            t.update(wrap(h), true, wrap(30.0 + h), true, DT);
+        }
+        // The Pinpoint freezes and, on the same bus, the hub IMU's reads fail (reported unhealthy).
+        for (int i = 0; i < 5; i++) {
+            t.update(wrap(h), false, 0.0, false, DT);
+        }
+        assertEquals(h, t.heading(), 1e-6, "failed reads on both sensors must hold the heading");
+        // The IMU recovers first, while the Pinpoint is still frozen: its first good read is a new baseline (not a
+        // turn from the fake 0), and turns after that carry the heading.
+        t.update(wrap(h), false, wrap(30.0 + h), true, DT);
+        assertEquals(h, t.heading(), 1e-6);
+        t.update(wrap(h), false, wrap(30.0 + h + 3.0), true, DT);
+        assertEquals(h + 3.0, t.heading(), 1e-6);
+    }
+
+    @Test
+    void testABackupOnTheWrongAxisIsNeverUsed() {
+        // A backup that barely sees the turn (measuring about the wrong axis).
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        for (int i = 1; i <= 30; i++) {
+            t.update(wrap(3.0 * i), true, wrap(0.3 * i), true, DT);
+        }
+        assertFalse(t.backupTrusted());
+        for (int i = 1; i <= 10; i++) {
+            t.update(0.0, false, wrap(9.0 + 0.3 * i), true, DT);
+        }
+        assertEquals(90.0, t.heading(), 1e-6, "an untrusted backup must not steer the heading");
         assertTrue(t.sensorReport().contains("BACKUP WRONG"), t.sensorReport());
+    }
+
+    @Test
+    void testRecoveringFromAFreezeDoesNotCountTheTurnTwice() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        double h = turnBoth(t, 0.0, 3.0, 20);                       // 60 degrees, backup now trusted
+        double frozenAt = h;
+        for (int i = 0; i < 10; i++) {                              // Pinpoint frozen at 60 while turning 30 more
+            h += 3.0;
+            t.update(wrap(frozenAt), false, wrap(h), true, DT);
+        }
+        h += 3.0;
+        t.update(wrap(h), true, wrap(h), true, DT);                 // back: its reading jumps the 33 it missed
+        h += 3.0;
+        t.update(wrap(h), true, wrap(h), true, DT);
+        assertEquals(h, t.heading(), 1e-6);
     }
 
     @Test
@@ -365,15 +419,162 @@ class IamYouTest {
     }
 
     @Test
-    void testABadReadOrMissingPodDoesNotCountAsAGlitch() {
-        assertTrue(iamyou.HeadingTracker.headingValid(
-                com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.FAULT_BAD_READ));
-        assertTrue(iamyou.HeadingTracker.headingValid(
+    void testOnlyAMissingPodLeavesThePinpointHeadingFresh() {
+        assertTrue(iamyou.HeadingTracker.freshHeading(
+                com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.READY));
+        assertTrue(iamyou.HeadingTracker.freshHeading(
                 com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.FAULT_Y_POD_NOT_DETECTED));
-        assertFalse(iamyou.HeadingTracker.headingValid(
+        // A bad read is the driver repeating the previous value: frozen, not current.
+        assertFalse(iamyou.HeadingTracker.freshHeading(
+                com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.FAULT_BAD_READ));
+        assertFalse(iamyou.HeadingTracker.freshHeading(
                 com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.CALIBRATING));
-        assertFalse(iamyou.HeadingTracker.headingValid(
+        assertFalse(iamyou.HeadingTracker.freshHeading(
                 com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.NOT_READY));
+    }
+
+    @Test
+    void testStandingStillTheHeadingIgnoresDrift() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, Double.NaN, false, DT, true);
+        // The gyro creeps 0.1 degree a second while the robot sits for 30 seconds.
+        for (int i = 1; i <= 1500; i++) {
+            t.update(0.1 * i * DT, true, Double.NaN, false, DT, true);
+        }
+        // Only the first half second (settling, which could be real skid) is followed.
+        assertEquals(iamyou.STILL_SETTLE_SEC * 0.1, t.heading(), 0.01);
+        assertEquals(0.1, t.driftDegPerSec(), 0.01, "the drift rate should have been measured");
+    }
+
+    @Test
+    void testMeasuredDriftIsTakenOutWhileMoving() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        double gyro = 0.0;
+        t.update(gyro, true, Double.NaN, false, DT, true);
+        for (int i = 0; i < 1500; i++) {                      // 30 s still: learn 0.1 deg/s of drift
+            gyro += 0.1 * DT;
+            t.update(wrap(gyro), true, Double.NaN, false, DT, true);
+        }
+        // Now turn 90 degrees over 1 s; the gyro reports the turn plus its drift.
+        for (int i = 0; i < 50; i++) {
+            gyro += 90.0 / 50 + 0.1 * DT;
+            t.update(wrap(gyro), true, Double.NaN, false, DT, false);
+        }
+        assertEquals(90.0, t.heading(), 0.1);
+    }
+
+    @Test
+    void testARobotTurnedWhileItsWheelsAreStoppedIsStillFollowed() {
+        // Turned by hand in INIT, or shoved round on its rollers: the wheels say "still", the gyro says turning.
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        double gyro = 0.0;
+        t.update(gyro, true, Double.NaN, false, DT, true);
+        for (int i = 0; i < 100; i++) {                       // sits for 2 s
+            t.update(gyro, true, Double.NaN, false, DT, true);
+        }
+        for (int i = 0; i < 100; i++) {                       // then 60 degrees in 2 s, wheels never moving
+            gyro += 0.6;
+            t.update(wrap(gyro), true, Double.NaN, false, DT, true);
+        }
+        for (int i = 0; i < 300; i++) {                       // and sits again
+            t.update(wrap(gyro), true, Double.NaN, false, DT, true);
+        }
+        assertEquals(60.0, t.heading(), 1.5, "the turn must not be thrown away as drift");
+        assertEquals(0.0, t.driftDegPerSec(), 1e-9, "and must not be learned as drift");
+    }
+
+    @Test
+    void testAPushedRobotIsNotStillAndItsTurnCounts() {
+        // Wheels turning (a push) means not still: the turn is real and must be followed.
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, Double.NaN, false, DT, false);
+        for (int i = 1; i <= 10; i++) {
+            t.update(3.0 * i, true, Double.NaN, false, DT, false);
+        }
+        assertEquals(30.0, t.heading(), 1e-6);
+    }
+
+    @Test
+    void testContinuousTurningStaysWithinOneTurn() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        turnBoth(t, 0.0, 6.0, 300);   // five full turns CCW
+        assertTrue(Math.abs(t.heading()) <= 180.0, "heading " + t.heading());
+        assertEquals(0.0, t.heading(), 1e-6);
+    }
+
+    @Test
+    void testTheSensorTotalsKeepCountingForTheSpinTest() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        turnBoth(t, 0.0, 10.0, 3600);   // a hundred full turns
+        assertEquals(0.0, t.heading(), 1e-6);
+        assertTrue(t.sensorReport().contains("main 36000.0"), t.sensorReport());
+    }
+
+    @Test
+    void testTheTurnScaleCorrectsAGyroThatUnderReads() {
+        // The gyro sees 98 % of every turn. Ten full turns read 3528; the spin test gives 3600 / 3528.
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.setScales(3600.0 / 3528.0, 1.0);
+        t.update(0.0, true, Double.NaN, false, DT);
+        double gyro = 0.0;
+        for (int i = 0; i < 1800; i++) {   // ten turns, 2 degrees of true turning a loop
+            gyro += 2.0 * 0.98;
+            t.update(wrap(gyro), true, Double.NaN, false, DT);
+        }
+        assertEquals(0.0, t.heading(), 1e-6, "after exactly ten turns the robot faces where it started");
+    }
+
+    // ------------------------------------------------------------------ drive check
+
+    /** One second each of forward, strafe right and clockwise spin, on a robot with the given sign errors. */
+    private static String driveCheckOn(double forwardSign, double strafeSign, double headingSign) {
+        iamyou.DriveCheck check = new iamyou.DriveCheck();
+        for (int i = 0; i < 50; i++) {
+            check.update(1.0, 0.0, 0.0, forwardSign * 40.0, 0.0, 0.0, DT);
+        }
+        for (int i = 0; i < 50; i++) {
+            check.update(0.0, 1.0, 0.0, 0.0, strafeSign * -30.0, 0.0, DT);   // right = negative leftward speed
+        }
+        for (int i = 0; i < 50; i++) {
+            check.update(0.0, 0.0, 1.0, 0.0, 0.0, headingSign * -200.0, DT); // clockwise = heading falling
+        }
+        return check.report();
+    }
+
+    @Test
+    void testDriveCheckPassesAConsistentRobot() {
+        assertTrue(driveCheckOn(1, 1, 1).endsWith("all agree"), driveCheckOn(1, 1, 1));
+    }
+
+    @Test
+    void testDriveCheckNamesAHeadingThatCountsBackwards() {
+        String report = driveCheckOn(1, 1, -1);
+        assertTrue(report.contains("turn BACKWARDS") && report.contains("PINPOINT_HEADING_REVERSED"), report);
+    }
+
+    @Test
+    void testDriveCheckNamesMotorsThatAreAllBackwards() {
+        assertTrue(driveCheckOn(-1, -1, -1).contains("ALL FOUR MOTORS BACKWARDS"), driveCheckOn(-1, -1, -1));
+    }
+
+    @Test
+    void testDriveCheckNamesSwappedSides() {
+        assertTrue(driveCheckOn(1, -1, -1).contains("LEFT/RIGHT MOTORS SWAPPED"), driveCheckOn(1, -1, -1));
+        assertTrue(driveCheckOn(1, -1, 1).contains("FRONT/BACK MOTORS SWAPPED"), driveCheckOn(1, -1, 1));
+    }
+
+    @Test
+    void testDriveCheckWaitsForEnoughCleanDriving() {
+        iamyou.DriveCheck check = new iamyou.DriveCheck();
+        // Diagonal driving, slow crawling and a stopped robot are not evidence of anything.
+        for (int i = 0; i < 200; i++) {
+            check.update(0.7, 0.7, 0.0, 30.0, -30.0, 0.0, DT);
+            check.update(1.0, 0.0, 0.0, 1.0, 0.0, 0.0, DT);
+            check.update(0.0, 0.0, 0.0, 40.0, 0.0, 300.0, DT);
+        }
+        assertTrue(check.report().startsWith("fwd ?  strafe ?  turn ?"), check.report());
     }
 
     // ------------------------------------------------------------------ NaN safety

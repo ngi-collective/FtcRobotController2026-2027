@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -137,6 +138,11 @@ public class IamYouHeadlessTest {
             assertTrue(right.y() < -0.15, "right should drive along -Y" + at + ", got " + right);
             assertTrue(Math.abs(right.x()) < 0.15 * -right.y(), "right drifted along X" + at + ": " + right);
         }
+        // The simulated robot is consistent, and by now it has driven forward, strafed and spun: iamyou's own
+        // drive check must have reached that verdict from watching.
+        assertTrue(harness.lastTelemetry().stream()
+                        .anyMatch(line -> line.startsWith("Drive Check : fwd OK  strafe OK  turn OK")),
+                "telemetry was " + harness.lastTelemetry());
     }
 
     @Test
@@ -255,6 +261,10 @@ public class IamYouHeadlessTest {
             throw new IllegalStateException("the plain-JVM vision stack would not start", e);
         }
         hardware = new VerityRobot().create();
+        // The real robot's Pinpoint under-reads every turn by 4.1 % (ten turns read 3453), which iamyou corrects with
+        // PINPOINT_TURN_SCALE. The simulated gyro is perfect, so it is made to under-read the same way, through the
+        // device's own yaw-scale register, for the correction to have something to correct.
+        hardware.get(GoBildaPinpointDriver.class, "pinpoint").setYawScalar(1.0 / iamyou.PINPOINT_TURN_SCALE);
         hardware.drive().setPose(Pose2d.ORIGIN);
         harness = OpModeHarness.forLinear(new iamyou(), hardware);
         harness.launch();

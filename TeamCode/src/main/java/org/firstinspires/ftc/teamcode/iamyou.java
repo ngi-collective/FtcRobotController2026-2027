@@ -15,6 +15,8 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.UnnormalizedAngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.vision.VisionPortal;
@@ -121,6 +123,7 @@ public class iamyou extends LinearOpMode {
     private final Intake intakeLogic = new Intake();
     private final Outtake outtakeLogic = new Outtake();
     private final HeadingTracker headingTracker = new HeadingTracker();
+    private final DriveCheck driveCheck = new DriveCheck();
 
     /** True = gamepad 2 runs the intake and outtake while gamepad 1 only drives. */
     protected boolean twoControllers() {
@@ -281,7 +284,13 @@ public class iamyou extends LinearOpMode {
 
         try {
             // ================= PRE-START =================
+            ElapsedTime initTimer = new ElapsedTime();
             while (!isStarted() && !isStopRequested()) {
+                for (LynxModule hub : hubs) {
+                    hub.clearBulkCache();
+                }
+                double initDt = initTimer.seconds();
+                initTimer.reset();
                 driverPosition = readDriverPosition(driverPosition);
                 if (gamepad1.x) {
                     red = false;
@@ -296,14 +305,18 @@ public class iamyou extends LinearOpMode {
                 if (hasHeading) {
                     // Live, so the sensor can be checked before START: turn the robot LEFT by hand and this must
                     // count UP; put it back and it must return to where it was; left alone it must not move.
-                    headingTracker.update(pinpoint, imu, 0.02);
-                    telemetry.addData("Heading (deg)", "%.1f  (turn robot LEFT by hand: must go UP)",
-                            headingTracker.heading());
+                    // Sitting in INIT is the best time to measure gyro drift: the robot is still for seconds on end.
+                    headingTracker.update(pinpoint, imu, initDt, wheelsStill(wheels));
+                    telemetry.addData("Heading (deg)", "%.1f", headingTracker.heading());
                     telemetry.addData("Sensors", headingTracker.sensorReport());
+                    telemetry.addData("Hand-turn check", "turn the robot LEFT: main AND backup must go UP");
                     telemetry.addData("Level Check", levelCheck(pinpoint, imu));
                 }
                 if (pinpoint != null) {
                     telemetry.addData("Pinpoint", pinpointStatus(pinpoint));   // the tracker above updated it
+                    // goBILDA calibrates this on every device before shipping and asks that it not be changed; if it
+                    // looks wrong (far from about 1.0), the guide says to contact tech@gobilda.com.
+                    telemetry.addData("Pinpoint Yaw Scalar", "%.4f (factory value)", pinpoint.getYawScalar());
                 }
                 telemetry.addData("Zero Heading",  "Options button: wherever the robot faces becomes NORTH");
                 telemetry.addData("Driver Position", driverPosition + "  (D-pad: Up=N Down=S Left=W Right=E)");
@@ -327,6 +340,7 @@ public class iamyou extends LinearOpMode {
             ElapsedTime currentTimer = new ElapsedTime();
             telemetry.setMsTransmissionInterval(100);
             double lastIntakePower = 0.0;
+            double lastCheckedHeading = 0.0;
             boolean lastOptions = false;
             double intakeAmps = 0.0;
 
@@ -347,7 +361,10 @@ public class iamyou extends LinearOpMode {
                 lastOptions = gamepad1.options;
 
                 // No heading source = heading stuck at 0 and driver position ignored: plain robot-relative driving.
-                double heading = headingTracker.update(pinpoint, imu, dt);
+                // Still = nobody asking it to move and no wheel turning (a push turns the wheels). Any heading change
+                // then is gyro drift, which the tracker ignores and measures.
+                boolean still = wheelsStill(wheels) && !sticksTouched(gamepad1) && !aimerMayTurn(aimer, outtakeLogic);
+                double heading = headingTracker.update(pinpoint, imu, dt, still);
                 driverPosition = hasHeading ? readDriverPosition(driverPosition) : DriverPosition.SOUTH;
 
                 // ---- Aim ----
@@ -385,6 +402,31 @@ public class iamyou extends LinearOpMode {
                 );
 
                 DriveResult result = driveLogic.calculate(params);
+
+                // ---- Drive check ----
+                // Compares what the sticks asked the robot to do with what the Pinpoint's pods and the heading say it
+                // actually did. Field-centric only works when all three agree, however good the heading is.
+                double headingRate = dt > 0 ? AngleUnit.normalizeDegrees(heading - lastCheckedHeading) / dt : 0.0;
+                lastCheckedHeading = heading;
+                if (!aiming && !(gamepad1.options)) {
+                    double measuredForward = Double.NaN;
+                    double measuredLeft = Double.NaN;
+                    if (pinpoint != null) {
+                        // The Pinpoint reports velocity in its own field frame; turned back by its own heading, that
+                        // is simply what its two pods are doing: forward and left, in inches per second.
+                        double h = pinpoint.getHeading(AngleUnit.RADIANS);
+                        double vx = pinpoint.getVelX(DistanceUnit.INCH);
+                        double vy = pinpoint.getVelY(DistanceUnit.INCH);
+                        measuredForward = Math.cos(h) * vx + Math.sin(h) * vy;
+                        measuredLeft = -Math.sin(h) * vx + Math.cos(h) * vy;
+                        // Its gyro's own turn rate, with the same sign setting as the heading iamyou steers by:
+                        // steadier than differencing two headings a loop apart.
+                        headingRate = pinpoint.getHeadingVelocity(UnnormalizedAngleUnit.DEGREES)
+                                * (PINPOINT_HEADING_REVERSED ? -1.0 : 1.0);
+                    }
+                    driveCheck.update(result.robotForward, result.robotRight, result.twist,
+                            measuredForward, measuredLeft, headingRate, dt);
+                }
                 double[] wheelPowers = {result.powers.getFL(), result.powers.getFR(),
                         result.powers.getBL(), result.powers.getBR()};
                 if (aiming) {
@@ -451,6 +493,9 @@ public class iamyou extends LinearOpMode {
                 telemetry.addData("Driver Position",    driverPosition + "  (D-pad to change)");
                 telemetry.addData("Heading (deg)",      "%.1f", heading);
                 telemetry.addData("Sensors",            headingTracker.sensorReport());
+                telemetry.addData("Drive Check",        driveCheck.report());
+                telemetry.addData("Still Check",        stillReport(wheels, gamepad1, still,
+                        aimerMayTurn(aimer, outtakeLogic)));
                 telemetry.addData("Slow Mode",          result.slowMode ? "ON" : "OFF");
                 telemetry.addData("Stop Assist",        result.braking ? "BRAKING" : "off");
                 telemetry.addData("Intake",             "%s  power %.2f  %.1f A",
@@ -567,6 +612,38 @@ public class iamyou extends LinearOpMode {
         }
         return String.format("%s  %.1f deg off  %.2f m",
                 aim.settled() ? "ON TARGET" : "turning", Math.toDegrees(aim.errorRadians()), aim.rangeMetres());
+    }
+
+    /** True when every drive wheel's encoder says it is stopped. */
+    private static boolean wheelsStill(DcMotorEx[] wheels) {
+        for (DcMotorEx wheel : wheels) {
+            if (Math.abs(wheel.getVelocity()) > STILL_WHEEL_TICKS_PER_SEC) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** One telemetry line: whether the robot counts as standing still, and if not, what is stopping it. */
+    private static String stillReport(DcMotorEx[] wheels, Gamepad pad, boolean still, boolean aimerBusy) {
+        double fastest = 0.0;
+        for (DcMotorEx wheel : wheels) {
+            fastest = Math.max(fastest, Math.abs(wheel.getVelocity()));
+        }
+        return String.format("%s  wheels %.0f t/s (limit %.0f)  sticks %.2f %.2f %.2f%s", still ? "yes" : "NO",
+                fastest, STILL_WHEEL_TICKS_PER_SEC, pad.left_stick_x, pad.left_stick_y, pad.right_stick_x,
+                aimerBusy ? "  aimer on" : "");
+    }
+
+    /** True when the driver is pushing either drive stick past its deadzone. */
+    private static boolean sticksTouched(Gamepad pad) {
+        return Math.hypot(pad.left_stick_x, pad.left_stick_y) >= JOYSTICK_DEADZONE
+                || Math.abs(pad.right_stick_x) >= JOYSTICK_DEADZONE;
+    }
+
+    /** True while the aimer may be turning the robot on its own. */
+    private boolean aimerMayTurn(CellAimer aimer, Outtake outtake) {
+        return aimer != null && outtake.isOn() && toggleAprilTagAdjust;
     }
 
     /** Adds "name (type)" to missing if the configuration has no device of that type under that name. */
@@ -881,6 +958,103 @@ public class iamyou extends LinearOpMode {
     }
 
     // =====================================================================================================
+    // DRIVE CHECK
+    //
+    // Field-centric steering needs three things to agree: which way the robot moves for a "forward" command, which way
+    // for a "right" command, and which way the heading counts when it turns. If any one is backwards, the robot drives
+    // correctly facing its start direction and wrongly after turning, even with a perfect heading. This watches the
+    // driver's own driving and reports which of the three is backwards. It only reports: nothing is flipped by itself.
+    // =====================================================================================================
+
+    /** A stick command below this is too small to judge; above it, the other two commands must be below IDLE. */
+    static final double CHECK_COMMAND = 0.30;
+    static final double CHECK_IDLE = 0.15;
+    /** The robot must actually be moving this fast (inches/sec, degrees/sec) for its direction to count. */
+    static final double CHECK_MIN_SPEED_IN_PER_SEC = 4.0;
+    static final double CHECK_MIN_TURN_DEG_PER_SEC = 20.0;
+    /** Seconds of one-sided evidence needed for a verdict. */
+    static final double CHECK_VERDICT_SEC = 0.5;
+    static final double CHECK_MAX_SEC = 3.0;
+
+    /** Judges, from ordinary driving, whether forward, strafe and turn each go the way the code assumes. */
+    static class DriveCheck {
+        // Seconds of evidence: positive = goes the way commanded, negative = goes the opposite way.
+        private double forward = 0.0;
+        private double strafe = 0.0;
+        private double turn = 0.0;
+
+        /**
+         * @param cmdForward       commanded robot-forward, -1..1
+         * @param cmdRight         commanded robot-right, -1..1
+         * @param cmdTwist         commanded turn, clockwise positive, -1..1
+         * @param measuredForward  the pods' forward speed, inches/sec; NaN if there are no pods
+         * @param measuredLeft     the pods' leftward speed, inches/sec; NaN if there are no pods
+         * @param headingRate      how fast the heading iamyou steers by is changing, degrees/sec, CCW positive
+         */
+        void update(double cmdForward, double cmdRight, double cmdTwist,
+                    double measuredForward, double measuredLeft, double headingRate, double dtSeconds) {
+            double dt = Math.max(0.0, Math.min(0.1, finite(dtSeconds, 0.0)));
+            boolean onlyForward = Math.abs(cmdForward) >= CHECK_COMMAND
+                    && Math.abs(cmdRight) < CHECK_IDLE && Math.abs(cmdTwist) < CHECK_IDLE;
+            boolean onlyRight = Math.abs(cmdRight) >= CHECK_COMMAND
+                    && Math.abs(cmdForward) < CHECK_IDLE && Math.abs(cmdTwist) < CHECK_IDLE;
+            boolean onlyTwist = Math.abs(cmdTwist) >= CHECK_COMMAND
+                    && Math.abs(cmdForward) < CHECK_IDLE && Math.abs(cmdRight) < CHECK_IDLE;
+
+            if (onlyForward && Math.abs(finite(measuredForward, 0.0)) >= CHECK_MIN_SPEED_IN_PER_SEC) {
+                forward = tally(forward, cmdForward * measuredForward, dt);
+            }
+            if (onlyRight && Math.abs(finite(measuredLeft, 0.0)) >= CHECK_MIN_SPEED_IN_PER_SEC) {
+                strafe = tally(strafe, cmdRight * -measuredLeft, dt);
+            }
+            // A clockwise command must make the (counter-clockwise positive) heading fall.
+            if (onlyTwist && Math.abs(finite(headingRate, 0.0)) >= CHECK_MIN_TURN_DEG_PER_SEC) {
+                turn = tally(turn, cmdTwist * -headingRate, dt);
+            }
+        }
+
+        private static double tally(double evidence, double agreement, double dt) {
+            return Math.max(-CHECK_MAX_SEC, Math.min(CHECK_MAX_SEC, evidence + Math.signum(agreement) * dt));
+        }
+
+        /** +1 = agrees, -1 = backwards, 0 = not enough driving yet. */
+        private static int verdict(double evidence) {
+            return evidence >= CHECK_VERDICT_SEC ? 1 : evidence <= -CHECK_VERDICT_SEC ? -1 : 0;
+        }
+
+        private static String word(int verdict) {
+            return verdict > 0 ? "OK" : verdict < 0 ? "BACKWARDS" : "?";
+        }
+
+        /** One telemetry line: the three verdicts, then what they mean. */
+        String report() {
+            int f = verdict(forward);
+            int s = verdict(strafe);
+            int t = verdict(turn);
+            String line = "fwd " + word(f) + "  strafe " + word(s) + "  turn " + word(t) + "  -> ";
+            if (f == 0 || s == 0 || t == 0) {
+                return line + "drive forward, then strafe, then spin (one at a time, 1 s each)";
+            }
+            if (f > 0 && s > 0 && t > 0) {
+                return line + "all agree";
+            }
+            if (f > 0 && s > 0) {
+                return line + "HEADING COUNTS BACKWARDS: flip PINPOINT_HEADING_REVERSED";
+            }
+            if (f < 0 && s < 0 && t < 0) {
+                return line + "ALL FOUR MOTORS BACKWARDS: flip every direction in Constants.drivetrainConfig";
+            }
+            if (f > 0 && s < 0 && t < 0) {
+                return line + "LEFT/RIGHT MOTORS SWAPPED: swap FL with FR and BL with BR in the configuration";
+            }
+            if (f > 0 && s < 0) {
+                return line + "FRONT/BACK MOTORS SWAPPED: swap FL with BL and FR with BR in the configuration";
+            }
+            return line + "unexpected combination: send a photo of this line";
+        }
+    }
+
+    // =====================================================================================================
     // HEADING
     //
     // The heading iamyou steers by is built from how far the robot TURNED each loop, not from a sensor's raw value.
@@ -888,15 +1062,59 @@ public class iamyou extends LinearOpMode {
     //  - The Pinpoint is powered through its I2C cable. Hard driving can dip the voltage enough to restart it; it then
     //    reports heading 0 and recalibrates its gyro while the robot is moving, so a raw reading would be wrong from
     //    then on. Read as turns, the restart is one impossible jump, which is ignored.
-    //  - A loop where the Pinpoint is restarting or calibrating, or turns faster than any robot can, uses the Control
-    //    Hub IMU's turn for that loop instead - but only once the IMU has been seen to agree with the Pinpoint. A
-    //    backup whose turns run the wrong way (a hub mounting described wrongly) would otherwise turn every glitch
-    //    into a heading error, which is exactly how the controls came to invert. Untrusted, a glitch holds the heading.
-    //  - The Pinpoint also reports "not READY" for things that leave its heading valid: a single bad read (the driver
-    //    repeats the previous value) or a pod not detected. Those are not glitches.
+    //  - A loop where the Pinpoint is frozen (restarting, calibrating, or a bad read the driver covers by repeating
+    //    the previous value) or turns faster than any robot can uses the Control Hub IMU's turn instead - once the
+    //    IMU has been seen to turn the same way and by the same amount as the Pinpoint. A backup that turns the other
+    //    way is never used: which of the two is backwards is settled by hand (PINPOINT_HEADING_REVERSED and
+    //    HUB_IMU_HEADING_REVERSED), not guessed. Untrusted, a frozen stretch holds the heading.
+    //  - A failed Control Hub IMU read (heading 0, acquisition time 0) is ignored, not taken as a turn to 0. A
+    //    Pinpoint on I2C port 0 shares a bus with that IMU and can make its reads fail exactly when it glitches.
+    //  - When the Pinpoint comes back, its first reading is a new starting point rather than a turn, so the motion
+    //    the IMU already covered is not counted twice.
+    //  - A pod not detected leaves the heading valid: it comes from the Pinpoint's gyro, not its pods.
     // Both sensors' turns since the last zero are also kept separately and shown, so a sensor that slowly drifts
-    // (tilted mount, wrong scale) shows up as the two disagreeing.
+    // (tilted mount, wrong scale) shows up as the two disagreeing. Those totals keep counting past 360, which is
+    // what the spin test for the TURN_SCALE constants reads; the heading itself stays within -180..180.
+    //  - A robot standing still (no stick, no wheel turning) cannot turn, so heading changes then are gyro drift: the
+    //    heading holds, and the drift rate is measured and subtracted while the robot moves.
     // =====================================================================================================
+
+    /**
+     * Which way each heading sensor counts. Turning the robot LEFT (counter-clockwise from above) must make both the
+     * "main" and the "backup" numbers on the INIT telemetry's Sensors line go UP; flip whichever one goes down.
+     * A Pinpoint mounted upside down counts backwards; so does a Control Hub whose mounting is described wrongly.
+     */
+    static final boolean PINPOINT_HEADING_REVERSED = false;
+    static final boolean HUB_IMU_HEADING_REVERSED = false;
+
+    /**
+     * TURN SCALE. A gyro that measures a full turn as 352 degrees is 8 degrees out after one spin and 80 after ten, so
+     * a robot that spins a lot slowly loses track of which way is which. To measure it:
+     *  1. After START, line the robot up square against a wall or a tile seam and press Options.
+     *  2. Spin it ten full turns with the right stick (either way), slowly at the end, and line it up exactly again.
+     *  3. Read the Sensors line: "main" should say 3600 (or -3600), "backup" the same.
+     *  4. Set the scale to 3600 / |reading|, e.g. main 3528 -> PINPOINT_TURN_SCALE = 3600 / 3528.0 = 1.0204.
+     */
+    // Measured 2026-11-08: ten full turns read 3453 on the Pinpoint (it under-reads every turn by 4.1 %).
+    static final double PINPOINT_TURN_SCALE = 3600.0 / 3453.0;
+    static final double HUB_IMU_TURN_SCALE = 1.0;
+
+    /** A wheel slower than this (encoder ticks/sec) counts as stopped when deciding the robot is standing still. */
+    static final double STILL_WHEEL_TICKS_PER_SEC = 15.0;
+    /**
+     * How long the wheels must have been stopped before the robot counts as standing still. Right after stopping, the
+     * chassis can still skid and turn on locked wheels, and that turn is real.
+     */
+    static final double STILL_SETTLE_SEC = 0.5;
+    /**
+     * The most a gyro can plausibly drift. Anything faster while the wheels are stopped is the robot really turning:
+     * pushed, sliding round on its mecanum rollers, or turned by hand. A healthy Pinpoint measures about 0.01.
+     */
+    static final double MAX_DRIFT_DEG_PER_SEC = 0.15;
+    /** Heading change allowed on top of that before a held robot is judged to be really turning (sensor noise). */
+    static final double HOLD_SLACK_DEG = 1.0;
+    /** Drift is measured over stretches of stillness this long, never from a single loop. */
+    static final double DRIFT_SAMPLE_SEC = 3.0;
 
     /** Faster than this, a change of reading is a glitch or a sensor restart, not the robot turning. */
     static final double MAX_TURN_RATE_DEG_PER_SEC = 1000.0;
@@ -904,7 +1122,7 @@ public class iamyou extends LinearOpMode {
     static final double TURN_JUMP_SLACK_DEG = 5.0;
     /** How much the robot must have turned, by both sensors, before the backup's agreement is judged. */
     static final double BACKUP_TRUST_AFTER_DEG = 45.0;
-    /** The backup is trusted while its turns are this close to the main sensor's (1.0 = identical). */
+    /** The backup is trusted while its turns are this close to the main sensor's (1.0 = identical, same way round). */
     static final double BACKUP_MIN_AGREEMENT = 0.85;
     static final double BACKUP_MAX_AGREEMENT = 1.15;
     /** Turns smaller than this in one loop are too small to judge agreement by (sensor noise). */
@@ -917,6 +1135,10 @@ public class iamyou extends LinearOpMode {
         private double backupSinceZero = 0.0;
         private double lastPrimary = Double.NaN;
         private double lastBackup = Double.NaN;
+        /** True after a loop the main sensor was frozen: its next reading starts a new baseline, it is not a turn. */
+        private boolean primaryGap = false;
+        /** The same for the backup, after a failed read. */
+        private boolean backupGap = false;
         private int rejected = 0;
         private boolean usedBackup = false;
         private boolean hasPrimary = false;
@@ -926,38 +1148,85 @@ public class iamyou extends LinearOpMode {
         private double sumPrimaryTimesBackup = 0.0;
         private double judgedTurn = 0.0;
         private String lastFault = null;
+        // Gyro drift: measured while the robot stands still, subtracted while it moves.
+        private double stillSeconds = 0.0;
+        private double driftDegPerSec = 0.0;
+        // While holding: everything the sensor has reported since the hold began (given back if it turns out to be a
+        // real turn), and the current stretch being measured for drift.
+        private double heldTurn = 0.0;
+        private double heldSeconds = 0.0;
+        private double sampleTurn = 0.0;
+        private double sampleSeconds = 0.0;
+        private boolean still = false;
+        /** Multiplies each sensor's turns (the TURN_SCALE constants for whichever sensor is in that role). */
+        private double primaryScale = 1.0;
+        private double backupScale = 1.0;
 
         /** Reads the sensors on the robot and updates the heading. The Pinpoint is primary when there is one. */
+        double update(GoBildaPinpointDriver pinpoint, IMU imu, double dtSeconds, boolean robotStill) {
+            this.still = robotStill;
+            return update(pinpoint, imu, dtSeconds);
+        }
+
         double update(GoBildaPinpointDriver pinpoint, IMU imu, double dtSeconds) {
-            double imuYaw = imu != null ? imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES) : Double.NaN;
+            double imuYaw = Double.NaN;
+            boolean imuRead = false;
+            if (imu != null) {
+                YawPitchRollAngles angles = imu.getRobotYawPitchRollAngles();
+                // A failed read comes back as heading 0 with acquisition time 0 (the SDK returns the identity
+                // orientation). Taken as a reading, it is a sudden turn to 0, so it is treated as no reading at all.
+                imuRead = angles.getAcquisitionTime() != 0;
+                imuYaw = signed(angles.getYaw(AngleUnit.DEGREES), HUB_IMU_HEADING_REVERSED);
+            }
             if (pinpoint != null) {
                 pinpoint.update();
                 GoBildaPinpointDriver.DeviceStatus status = pinpoint.getDeviceStatus();
                 if (status != GoBildaPinpointDriver.DeviceStatus.READY) {
                     lastFault = status.toString();
                 }
-                return update(pinpoint.getHeading(AngleUnit.DEGREES), headingValid(status), imuYaw, true, dtSeconds);
+                primaryScale = PINPOINT_TURN_SCALE;
+                backupScale = HUB_IMU_TURN_SCALE;
+                return update(signed(pinpoint.getHeading(AngleUnit.DEGREES), PINPOINT_HEADING_REVERSED),
+                        freshHeading(status), imuYaw, imuRead, dtSeconds);
             }
-            return update(imuYaw, true, Double.NaN, true, dtSeconds);
+            primaryScale = HUB_IMU_TURN_SCALE;
+            return update(imuYaw, imuRead, Double.NaN, false, dtSeconds);
+        }
+
+        private static double signed(double deg, boolean reversed) {
+            return reversed ? -deg : deg;
         }
 
         /**
-         * @param primaryDeg     the main sensor's heading, degrees CCW; NaN if there is none
-         * @param primaryHealthy false while the main sensor says its reading cannot be trusted (calibrating)
-         * @param backupDeg      the backup sensor's heading, degrees CCW; NaN if there is none
-         * @param backupHealthy  false while the backup cannot be trusted
+         * @param primaryDeg    the main sensor's heading, degrees CCW; NaN if there is none
+         * @param primaryFresh  false while the main sensor's reading is frozen or meaningless (restarting,
+         *                      calibrating, or a bad read the driver papered over with the previous value)
+         * @param backupDeg     the backup sensor's heading, degrees CCW; NaN if there is none
+         * @param backupHealthy false while the backup cannot be trusted
          * @return the heading to steer by, degrees CCW, 0 = where the robot faced at the last zero
          */
-        double update(double primaryDeg, boolean primaryHealthy, double backupDeg, boolean backupHealthy,
+        /** As below, saying whether the robot is standing still (its heading changes are then drift). */
+        double update(double primaryDeg, boolean primaryFresh, double backupDeg, boolean backupHealthy,
+                      double dtSeconds, boolean robotStill) {
+            this.still = robotStill;
+            return update(primaryDeg, primaryFresh, backupDeg, backupHealthy, dtSeconds);
+        }
+
+        double update(double primaryDeg, boolean primaryFresh, double backupDeg, boolean backupHealthy,
                       double dtSeconds) {
             double dt = Math.max(0.0, finite(dtSeconds, 0.02));
             double limit = MAX_TURN_RATE_DEG_PER_SEC * dt + TURN_JUMP_SLACK_DEG;
-            double primaryTurn = turn(lastPrimary, primaryDeg);
-            double backupTurn = turn(lastBackup, backupDeg);
-            hasPrimary = !Double.isNaN(primaryDeg) && !Double.isInfinite(primaryDeg);
-            hasBackup = !Double.isNaN(backupDeg) && !Double.isInfinite(backupDeg);
-            boolean primaryOk = primaryHealthy && !Double.isNaN(primaryTurn) && Math.abs(primaryTurn) <= limit;
-            boolean backupOk = backupHealthy && !Double.isNaN(backupTurn) && Math.abs(backupTurn) <= limit;
+            boolean firstPrimary = Double.isNaN(lastPrimary);
+            hasPrimary = isReading(primaryDeg);
+            hasBackup = isReading(backupDeg);
+
+            double backupTurn = backupHealthy && !backupGap ? turn(lastBackup, backupDeg) * backupScale : Double.NaN;
+            boolean backupOk = !Double.isNaN(backupTurn) && Math.abs(backupTurn) <= limit;
+            boolean fresh = hasPrimary && primaryFresh;
+            // After a frozen stretch the main sensor's first reading is a new baseline, not a turn: the backup (or
+            // nothing) already stood in for the motion it missed, and adding its catch-up would count it twice.
+            double primaryTurn = fresh && !primaryGap ? turn(lastPrimary, primaryDeg) * primaryScale : Double.NaN;
+            boolean primaryOk = !Double.isNaN(primaryTurn) && Math.abs(primaryTurn) <= limit;
 
             if (primaryOk && backupOk && Math.abs(primaryTurn) >= BACKUP_JUDGE_MIN_TURN_DEG) {
                 sumPrimarySquared += primaryTurn * primaryTurn;
@@ -966,34 +1235,82 @@ public class iamyou extends LinearOpMode {
             }
 
             usedBackup = false;
+            double turned = 0.0;
+            boolean measured = false;
             if (primaryOk) {
-                heading += primaryTurn;
-            } else if (backupOk && (!hasPrimary || backupTrusted())) {
-                // No main sensor at all (Control Hub versions pass the IMU as primary, so this is the fallback for
-                // an unplugged Pinpoint), or a backup proven to agree.
-                heading += backupTurn;
+                turned = primaryTurn;
+                measured = true;
+                primarySinceZero += primaryTurn;
+            } else if (backupOk && !hasPrimary && Double.isNaN(lastPrimary)) {
+                // No main sensor at all: the backup is all there is.
+                turned = backupTurn;
+                measured = true;
+                usedBackup = true;
+            } else if (backupOk && backupTrusted()) {
+                turned = backupTurn;
                 usedBackup = true;
             }
-            if (!primaryOk && !Double.isNaN(primaryTurn)) {
-                rejected++;
-            }
-            if (primaryOk) {
-                primarySinceZero += primaryTurn;
+
+            stillSeconds = still ? stillSeconds + dt : 0.0;
+            if (still && stillSeconds >= STILL_SETTLE_SEC) {
+                // Wheels stopped and settled: small heading changes are gyro drift, so the heading is held. But stopped
+                // wheels do not prove the robot is not turning (mecanum rollers let it be pushed round, and it can
+                // be turned by hand), so what is held is kept, and given back the moment it adds up to more than
+                // drift could explain.
+                heldTurn += turned;
+                heldSeconds += dt;
+                if (measured) {
+                    sampleTurn += turned;
+                    sampleSeconds += dt;
+                }
+                if (Math.abs(heldTurn) > HOLD_SLACK_DEG + MAX_DRIFT_DEG_PER_SEC * heldSeconds) {
+                    heading += heldTurn;
+                    endHold();
+                    stillSeconds = 0.0;
+                } else if (sampleSeconds >= DRIFT_SAMPLE_SEC) {
+                    double rate = sampleTurn / sampleSeconds;
+                    if (Math.abs(rate) <= MAX_DRIFT_DEG_PER_SEC) {
+                        driftDegPerSec += (rate - driftDegPerSec) * 0.5;
+                    }
+                    sampleTurn = 0.0;
+                    sampleSeconds = 0.0;
+                }
+            } else {
+                endHold();
+                // Moving (or just stopped): the drift is still there under the real turning, so take it back out.
+                heading += measured ? turned - driftDegPerSec * dt : turned;
             }
             if (backupOk) {
                 backupSinceZero += backupTurn;
             }
-            // Always move the baseline on, so after a restart the next turn is measured from the new reading.
-            if (hasPrimary) {
+            if (hasPrimary && !firstPrimary && !primaryOk) {
+                rejected++;
+            }
+
+            if (fresh) {
                 lastPrimary = primaryDeg;
+                primaryGap = false;
+            } else if (!firstPrimary) {
+                primaryGap = true;
             }
-            if (hasBackup) {
+            if (hasBackup && backupHealthy) {
                 lastBackup = backupDeg;
+                backupGap = false;
+            } else if (!Double.isNaN(lastBackup)) {
+                backupGap = true;
             }
+            // Kept within -180..180 so it reads sensibly: two full turns are the same direction as none, and the drive
+            // only uses the heading through cos and sin, which do not care.
+            heading = AngleUnit.normalizeDegrees(heading);
             return heading;
         }
 
-        /** Whether the backup's turns have been seen to match the main sensor's, both in direction and in size. */
+        /**
+         * Whether the backup's turns have been seen to match the main sensor's: same size and the same way round.
+         * Never flipped to fit: which sensor counts backwards is for a person to settle with the hand-turn check (see
+         * PINPOINT_HEADING_REVERSED), because a backup flipped to match a main sensor that is itself backwards would
+         * be wrong too, and a wrong guess turns every glitch into a heading error.
+         */
         boolean backupTrusted() {
             double agreement = backupAgreement();
             return judgedTurn >= BACKUP_TRUST_AFTER_DEG
@@ -1006,14 +1323,34 @@ public class iamyou extends LinearOpMode {
         }
 
         /**
-         * Whether a Pinpoint status leaves its heading usable. Restarting, calibrating or a runaway gyro do not. A bad
-         * read (the driver repeats the previous value) and a missing pod (heading comes from the gyro, not the pods)
-         * do.
+         * Whether a Pinpoint status means its heading reading is current. Restarting, calibrating and a runaway gyro
+         * do not; nor does a bad read, because the driver then repeats the previous value. A missing pod does: heading
+         * comes from the gyro, not the pods.
          */
-        static boolean headingValid(GoBildaPinpointDriver.DeviceStatus status) {
-            return status != GoBildaPinpointDriver.DeviceStatus.NOT_READY
-                    && status != GoBildaPinpointDriver.DeviceStatus.CALIBRATING
-                    && status != GoBildaPinpointDriver.DeviceStatus.FAULT_IMU_RUNAWAY;
+        static boolean freshHeading(GoBildaPinpointDriver.DeviceStatus status) {
+            return status == GoBildaPinpointDriver.DeviceStatus.READY
+                    || status == GoBildaPinpointDriver.DeviceStatus.FAULT_X_POD_NOT_DETECTED
+                    || status == GoBildaPinpointDriver.DeviceStatus.FAULT_Y_POD_NOT_DETECTED
+                    || status == GoBildaPinpointDriver.DeviceStatus.FAULT_NO_PODS_DETECTED;
+        }
+
+        /** Forgets the current hold. Drift is only ever learned from complete samples, so a part sample is dropped. */
+        private void endHold() {
+            heldTurn = 0.0;
+            heldSeconds = 0.0;
+            sampleTurn = 0.0;
+            sampleSeconds = 0.0;
+        }
+
+        /** The measured gyro drift of the steering sensor, degrees per second, being subtracted while moving. */
+        double driftDegPerSec() {
+            return driftDegPerSec;
+        }
+
+        /** For tests: the turn scales update(pinpoint, imu) would take from the constants. */
+        void setScales(double primary, double backup) {
+            primaryScale = primary;
+            backupScale = backup;
         }
 
         /** Makes the robot's current front heading 0 (NORTH). The sensors themselves are not touched. */
@@ -1027,12 +1364,12 @@ public class iamyou extends LinearOpMode {
             return heading;
         }
 
-        /** How many readings were thrown away as glitches or restarts since the OpMode began. */
+        /** How many loops the main sensor's reading was frozen or impossible, since the OpMode began. */
         int rejectedReadings() {
             return rejected;
         }
 
-        /** One telemetry line: each sensor's turn since the last zero, and how many readings were thrown away. */
+        /** One telemetry line: each sensor's turn since the last zero, the backup's health, and the glitch count. */
         String sensorReport() {
             if (!hasPrimary && !hasBackup) {
                 return "none";
@@ -1048,10 +1385,15 @@ public class iamyou extends LinearOpMode {
                 }
                 if (hasPrimary) {
                     double agreement = backupAgreement();
-                    line.append(judgedTurn < BACKUP_TRUST_AFTER_DEG ? "  backup unchecked"
+                    line.append(judgedTurn < BACKUP_TRUST_AFTER_DEG ? "  backup unchecked (turn the robot)"
                             : backupTrusted() ? "  backup OK"
+                            : agreement < 0 ? "  OPPOSITE WAYS (backup not used: do the hand-turn check)"
                             : String.format("  BACKUP WRONG (x%.2f, not used)", agreement));
                 }
+            }
+            line.append(String.format("  drift %.2f/s", driftDegPerSec));
+            if (still && stillSeconds >= STILL_SETTLE_SEC) {
+                line.append("  STILL");
             }
             line.append(String.format("  glitches %d", rejected));
             if (lastFault != null) {
@@ -1063,9 +1405,13 @@ public class iamyou extends LinearOpMode {
             return line.toString();
         }
 
+        private static boolean isReading(double deg) {
+            return !Double.isNaN(deg) && !Double.isInfinite(deg);
+        }
+
         /** The turn from one reading to the next, the short way round; NaN if either is missing. */
         private static double turn(double before, double after) {
-            if (Double.isNaN(before) || Double.isNaN(after) || Double.isInfinite(before) || Double.isInfinite(after)) {
+            if (!isReading(before) || !isReading(after)) {
                 return Double.NaN;
             }
             return AngleUnit.normalizeDegrees(after - before);
