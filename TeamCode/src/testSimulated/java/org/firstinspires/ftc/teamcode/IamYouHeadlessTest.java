@@ -138,11 +138,6 @@ public class IamYouHeadlessTest {
             assertTrue(right.y() < -0.15, "right should drive along -Y" + at + ", got " + right);
             assertTrue(Math.abs(right.x()) < 0.15 * -right.y(), "right drifted along X" + at + ": " + right);
         }
-        // The simulated robot is consistent, and by now it has driven forward, strafed and spun: iamyou's own
-        // drive check must have reached that verdict from watching.
-        assertTrue(harness.lastTelemetry().stream()
-                        .anyMatch(line -> line.startsWith("Drive Check : fwd OK  strafe OK  turn OK")),
-                "telemetry was " + harness.lastTelemetry());
     }
 
     @Test

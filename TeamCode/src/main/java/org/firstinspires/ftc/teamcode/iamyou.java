@@ -11,6 +11,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.hardware.IMU;
+import com.qualcomm.robotcore.hardware.VoltageSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -28,9 +29,7 @@ import java.util.List;
 
 /**
  * The whole I AM YOU TeleOp in one file: hardware setup, field-centric drive math, intake and flywheel control.
- * This class is the ONE-controller version; {@link IamYouTwoController} is the same program with the intake and
- * outtake moved to gamepad 2. {@link IamYouPinpoint} and {@link IamYouPinpointTwoController} are the same two programs
- * taking their heading from the goBILDA Pinpoint instead of the Control Hub's IMU.
+ * One controller, field-centric, heading from the goBILDA Pinpoint (the Control Hub's IMU is only a backup).
  *
  * Wiring (robot configuration names):
  *   Control Hub motors ...... 0 FL, 1 FR, 2 BL, 3 BR
@@ -49,12 +48,16 @@ import java.util.List;
  *                         (the middle of the group if there are several) and the left stick drives ROBOT-relative,
  *                         so pushing forward drives straight into it. Moving the right stick overrides the aim.
  *   D-pad ............... where the driver is standing (Up=N Down=S Left=W Right=E)
- *   Options ............. zero heading: wherever the robot faces right now becomes NORTH
+ *   Start (Options) ..... zero heading: wherever the robot faces right now becomes NORTH
+ *   Logitech logo ....... FULL heading reset: also resets the Pinpoint (position + gyro recalibration), the hub
+ *                         IMU and all drift/glitch history. Waits until the robot is stopped, then the drive is
+ *                         off for about a quarter second while the gyro recalibrates.
  *
  * Mechanism controls (gamepad 1 in this version, gamepad 2 in the two-controller version):
  *   Right trigger ....... intake (hold). Fixed speed, however far the trigger is pulled.
  *   Right bumper ........ outtake / poop out (hold; wins over the trigger). Intake motor and Staging run backwards.
- *   Left bumper ......... flywheel ON/OFF (press to toggle). Runs at OUTTAKE_POWER until pressed again.
+ *   Left bumper ......... flywheel ON/OFF (press to toggle). Holds FLYWHEEL_TARGET_TPS with velocity PIDF; the
+ *                         controller rumbles once and telemetry says READY when it is up to speed.
  *                         While ON, if this alliance's raised CELL is in view, the robot turns onto it
  *                         (CellAimer) and the right stick's turn is ignored; the left stick still drives.
  *
@@ -118,6 +121,14 @@ public class iamyou extends LinearOpMode {
 
     /** How often to read the intake motor's current (each read is a separate hub command, so don't do it every loop). */
     private static final double INTAKE_CURRENT_READ_SEC = 0.10;
+
+    /** The full reset (logo button) waits until the robot has been stopped this long. */
+    static final double FULL_RESET_STILL_SEC = 0.2;
+    /** The drive comes back after this even if the Pinpoint never reports READY. */
+    static final double FULL_RESET_TIMEOUT_SEC = 1.0;
+
+    /** True = add the sensor and drivetrain diagnostics back to the telemetry (for chasing heading problems). */
+    static final boolean DEBUG_TELEMETRY = false;
 
     private final Drive driveLogic = new Drive();
     private final Intake intakeLogic = new Intake();
@@ -244,11 +255,17 @@ public class iamyou extends LinearOpMode {
         // ================= FLYWHEEL (OUTTAKE MOTOR) =================
         DcMotorEx outtake = hardwareMap.get(DcMotorEx.class, OUTTAKE_NAME);
         outtake.setDirection(OUTTAKE_REVERSED ? DcMotorSimple.Direction.REVERSE : DcMotorSimple.Direction.FORWARD);
-        // Open loop at OUTTAKE_POWER for now. The encoder is still read, so telemetry shows the real wheel speed, which
-        // is the number velocity PID tuning will need later.
+        // Plain power mode: the velocity PIDF runs here (Outtake / FlywheelPIDF), reading the encoder each loop.
         outtake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         // Coast to a stop: braking a spinning flywheel hard is a shock load on the motor and gears.
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+
+        // Battery voltage, so the flywheel's feedforward gives the same speed on a full or a tired battery.
+        VoltageSensor battery = hardwareMap.voltageSensor.iterator().hasNext()
+                ? hardwareMap.voltageSensor.iterator().next() : null;
+        double batteryVolts = FLYWHEEL_NOMINAL_VOLTS;
+        double voltsReadAge = Double.MAX_VALUE;
+        boolean wasReady = false;
 
         // ================= CAMERA =================
         // Only for aiming at the raised CELL. Optional like the IMU: without it the robot drives and shoots, unaimed.
@@ -298,33 +315,25 @@ public class iamyou extends LinearOpMode {
                     red = true;
                 }
 
-                telemetry.addData("Status", "Initialized - waiting for start");
-                telemetry.addData("Controllers", twoControllers()
-                        ? "2 (gamepad 1 drives, gamepad 2 runs intake/outtake)" : "1 (gamepad 1 does everything)");
-                telemetry.addData("Heading Source", imuStatus);
+                // Kept running in INIT so heading drift is measured while the robot sits still.
                 if (hasHeading) {
-                    // Live, so the sensor can be checked before START: turn the robot LEFT by hand and this must
-                    // count UP; put it back and it must return to where it was; left alone it must not move.
-                    // Sitting in INIT is the best time to measure gyro drift: the robot is still for seconds on end.
                     headingTracker.update(pinpoint, imu, initDt, wheelsStill(wheels));
+                }
+                telemetry.addData("Status", "Initialized - waiting for start");
+                telemetry.addData("Heading Source", imuStatus);
+                if (pinpoint != null) {
+                    telemetry.addData("Pinpoint", pinpointStatus(pinpoint));
+                }
+                telemetry.addData("Alliance", red == null ? "NOT SET  (X = BLUE, B = RED)" : (red ? "RED" : "BLUE"));
+                telemetry.addData("Driver Position", driverPosition + "  (D-pad)");
+                if (camera == null) {
+                    telemetry.addData("Camera", "MISSING - aiming off");
+                }
+                if (DEBUG_TELEMETRY && hasHeading) {
                     telemetry.addData("Heading (deg)", "%.1f", headingTracker.heading());
                     telemetry.addData("Sensors", headingTracker.sensorReport());
-                    telemetry.addData("Hand-turn check", "turn the robot LEFT: main AND backup must go UP");
                     telemetry.addData("Level Check", levelCheck(pinpoint, imu));
                 }
-                if (pinpoint != null) {
-                    telemetry.addData("Pinpoint", pinpointStatus(pinpoint));   // the tracker above updated it
-                    // goBILDA calibrates this on every device before shipping and asks that it not be changed; if it
-                    // looks wrong (far from about 1.0), the guide says to contact tech@gobilda.com.
-                    telemetry.addData("Pinpoint Yaw Scalar", "%.4f (factory value)", pinpoint.getYawScalar());
-                }
-                telemetry.addData("Zero Heading",  "Options button: wherever the robot faces becomes NORTH");
-                telemetry.addData("Driver Position", driverPosition + "  (D-pad: Up=N Down=S Left=W Right=E)");
-                telemetry.addData("Alliance", red == null ? "NOT SET - aiming off  (X = BLUE, B = RED)"
-                        : (red ? "RED" : "BLUE") + "  (X = BLUE, B = RED)");
-                telemetry.addData("Camera", camera != null ? camera.getCameraState().toString()
-                        : "MISSING - aiming off. Add \"" + WEBCAM_NAME + "\" to the configuration");
-                telemetry.addData("Note", "Whatever direction the robot faces at START becomes NORTH");
                 telemetry.update();
             }
 
@@ -342,6 +351,12 @@ public class iamyou extends LinearOpMode {
             double lastIntakePower = 0.0;
             double lastCheckedHeading = 0.0;
             boolean lastOptions = false;
+            boolean lastGuide = false;
+            boolean resetPending = false;
+            boolean calibrating = false;
+            double stoppedSeconds = 0.0;
+            double calibratingSeconds = 0.0;
+            DcMotor.ZeroPowerBehavior driveZeroPower = DcMotor.ZeroPowerBehavior.BRAKE;
             double intakeAmps = 0.0;
 
             // ================= MAIN LOOP =================
@@ -359,6 +374,36 @@ public class iamyou extends LinearOpMode {
                     headingTracker.zero();
                 }
                 lastOptions = gamepad1.options;
+
+                // Logitech logo button (guide): FULL heading reset. Waits for the robot to stop, because the Pinpoint
+                // recalibrates its gyro and a moving robot would calibrate in a wrong drift. Then the drive stays off
+                // until the Pinpoint is READY again (about a quarter second).
+                if (gamepad1.guide && !lastGuide) {
+                    resetPending = true;
+                }
+                lastGuide = gamepad1.guide;
+                boolean robotStopped = wheelsStill(wheels) && !sticksTouched(gamepad1);
+                stoppedSeconds = robotStopped ? stoppedSeconds + dt : 0.0;
+                if (resetPending && stoppedSeconds >= FULL_RESET_STILL_SEC) {
+                    if (pinpoint != null) {
+                        pinpoint.resetPosAndIMU();
+                    }
+                    if (imu != null) {
+                        imu.resetYaw();
+                    }
+                    headingTracker.fullReset();
+                    resetPending = false;
+                    calibratingSeconds = 0.0;
+                    calibrating = pinpoint != null;
+                }
+                if (calibrating) {
+                    calibratingSeconds += dt;
+                    boolean ready = pinpoint.getDeviceStatus() == GoBildaPinpointDriver.DeviceStatus.READY;
+                    // The first loop or two after the command can still report the old READY.
+                    if ((ready && calibratingSeconds > 0.1) || calibratingSeconds > FULL_RESET_TIMEOUT_SEC) {
+                        calibrating = false;
+                    }
+                }
 
                 // No heading source = heading stuck at 0 and driver position ignored: plain robot-relative driving.
                 // Still = nobody asking it to move and no wheel turning (a push turns the wheels). Any heading change
@@ -403,6 +448,18 @@ public class iamyou extends LinearOpMode {
 
                 DriveResult result = driveLogic.calculate(params);
 
+                // BRAKE only once the sticks are released. While driving, a wheel at exactly 0 power (the inside
+                // wheels when driving and turning hard) would short-brake and drag the moving robot, costing speed.
+                boolean sticksActive = result.stickForward != 0.0 || result.stickRight != 0.0 || result.twist != 0.0;
+                DcMotor.ZeroPowerBehavior wantedZero = sticksActive
+                        ? DcMotor.ZeroPowerBehavior.FLOAT : DcMotor.ZeroPowerBehavior.BRAKE;
+                if (wantedZero != driveZeroPower) {
+                    for (DcMotorEx m : wheels) {
+                        m.setZeroPowerBehavior(wantedZero);
+                    }
+                    driveZeroPower = wantedZero;
+                }
+
                 // ---- Drive check ----
                 // Compares what the sticks asked the robot to do with what the Pinpoint's pods and the heading say it
                 // actually did. Field-centric only works when all three agree, however good the heading is.
@@ -433,6 +490,9 @@ public class iamyou extends LinearOpMode {
                     // Added after the drive math rather than fed in as a stick: the stick path's deadzone, friction
                     // boost and slow mode would reshape the aimer's tuned turn. CCW = left wheels back, right forward.
                     wheelPowers = addTurn(wheelPowers, aim.turnPower());
+                }
+                if (calibrating) {
+                    wheelPowers = new double[]{0.0, 0.0, 0.0, 0.0};   // hold still while the gyro recalibrates
                 }
                 fl.setPower(wheelPowers[0]);
                 fr.setPower(wheelPowers[1]);
@@ -476,43 +536,71 @@ public class iamyou extends LinearOpMode {
                 lastIntakePower = intakeResult.power;
 
                 // ---- Flywheel ----
-                double outtakePower = outtakeLogic.update(mech.left_bumper, dt);
-                outtake.setPower(outtakePower);
+                // The voltage read is a separate hub command, not in the bulk read, so only a few times a second.
+                voltsReadAge += dt;
+                if (battery != null && voltsReadAge >= 0.25) {
+                    double v = battery.getVoltage();
+                    if (v > 7.0 && v < 16.0) {
+                        batteryVolts += (v - batteryVolts) * 0.5;
+                    }
+                    voltsReadAge = 0.0;
+                }
                 double flywheelTicksPerSec = outtake.getVelocity();
+                double outtakePower = outtakeLogic.update(mech.left_bumper, flywheelTicksPerSec, batteryVolts, dt);
+                outtake.setPower(outtakePower);
+                boolean flywheelReady = outtakeLogic.isReady();
+                if (flywheelReady && !wasReady) {
+                    mech.rumble(200);
+                }
+                wasReady = flywheelReady;
 
                 // ================= TELEMETRY =================
-                telemetry.addData("Loop", "%.1f ms  (%.0f Hz)", dt * 1000.0, dt > 0 ? 1.0 / dt : 0.0);
+                for (String line : shotIndicator(outtakeLogic.isOn(), flywheelReady, flywheelTicksPerSec)) {
+                    telemetry.addLine(line);
+                }
+                telemetry.addData("Flywheel", "%s  %.0f / %.0f rpm  power %.2f",
+                        !outtakeLogic.isOn() ? "OFF" : flywheelReady ? "READY" : "spinning up",
+                        ticksPerSecToRpm(flywheelTicksPerSec),
+                        outtakeLogic.isOn() ? ticksPerSecToRpm(FLYWHEEL_TARGET_TPS) : 0.0, outtakePower);
+                if (resetPending) {
+                    telemetry.addLine("HEADING RESET: stop the robot to finish");
+                } else if (calibrating) {
+                    telemetry.addLine("HEADING RESET: hold still, recalibrating...");
+                }
+                telemetry.addData("Aim", aimStatus(aimer, aim, outtakeLogic.isOn()));
+                telemetry.addData("Intake", "%s  power %.2f  %.1f A",
+                        intakeResult.state, intakeResult.power, intakeAmps);
+                telemetry.addData("Intake Servos L | R", "%.2f | %.2f", leftServo, rightServo);
+                telemetry.addData("Staging", "%.2f", staging.getPower());
+                telemetry.addData("Slow Mode", result.slowMode ? "ON" : "OFF");
+                telemetry.addData("Stop Assist", result.braking ? "BRAKING" : "off");
+                telemetry.addLine("--- heading ---");
+                telemetry.addData("Heading (deg)", "%.1f", heading);
+                telemetry.addData("Facing (vs start)", snapToCardinal(heading));
+                telemetry.addData("Driver Position", driverPosition + "  (D-pad)");
+                telemetry.addData("Sensors", headingTracker.sensorReport());
+                if (pinpoint != null) {
+                    telemetry.addData("Pinpoint", pinpoint.getDeviceStatus());
+                }
                 if (!hasHeading) {
                     telemetry.addData("IMU", imuStatus);
                 }
-                if (pinpoint != null) {
-                    telemetry.addData("Pinpoint", "%s  x %.1f in  y %.1f in", pinpoint.getDeviceStatus(),
-                            pinpoint.getPosX(DistanceUnit.INCH), pinpoint.getPosY(DistanceUnit.INCH));
+                telemetry.addLine("--- wheels ---");
+                telemetry.addData("Twist", "%.2f", result.twist);
+                telemetry.addData("FL | FR", "%.2f | %.2f", wheelPowers[0], wheelPowers[1]);
+                telemetry.addData("BL | BR", "%.2f | %.2f", wheelPowers[2], wheelPowers[3]);
+                telemetry.addData("FL Vel | FR Vel", "%.0f | %.0f", params.flVelocity, params.frVelocity);
+                telemetry.addData("BL Vel | BR Vel", "%.0f | %.0f", params.blVelocity, params.brVelocity);
+                telemetry.addData("Loop", "%.1f ms", dt * 1000.0);
+                if (DEBUG_TELEMETRY) {
+                    telemetry.addLine("--- debug ---");
+                    telemetry.addData("Drive Check", driveCheck.report());
+                    telemetry.addData("Still Check", stillReport(wheels, gamepad1, still,
+                            aimerMayTurn(aimer, outtakeLogic)));
+                    telemetry.addData("Flywheel PIDF", "%s  %.1f V", outtakeLogic.pidf.terms(), batteryVolts);
+                    telemetry.addData("Cmd Fwd | Right", "%.2f | %.2f", result.stickForward, result.stickRight);
+                    telemetry.addData("Robot Fwd | Right", "%.2f | %.2f", result.robotForward, result.robotRight);
                 }
-                telemetry.addData("Facing (vs start)",  snapToCardinal(heading));
-                telemetry.addData("Driver Position",    driverPosition + "  (D-pad to change)");
-                telemetry.addData("Heading (deg)",      "%.1f", heading);
-                telemetry.addData("Sensors",            headingTracker.sensorReport());
-                telemetry.addData("Drive Check",        driveCheck.report());
-                telemetry.addData("Still Check",        stillReport(wheels, gamepad1, still,
-                        aimerMayTurn(aimer, outtakeLogic)));
-                telemetry.addData("Slow Mode",          result.slowMode ? "ON" : "OFF");
-                telemetry.addData("Stop Assist",        result.braking ? "BRAKING" : "off");
-                telemetry.addData("Intake",             "%s  power %.2f  %.1f A",
-                        intakeResult.state, intakeResult.power, intakeAmps);
-                telemetry.addData("Intake Servos L | R", "%.2f | %.2f", leftServo, rightServo);
-                telemetry.addData("Staging",            "%.2f", staging.getPower());
-                telemetry.addData("Flywheel",           "%s  power %.2f  %.0f ticks/s %s velocity",
-                        outtakeLogic.isOn() ? "ON" : "OFF", outtakePower, flywheelTicksPerSec, outtake.getVelocity());
-                telemetry.addData("Aim", aimStatus(aimer, aim, outtakeLogic.isOn()));
-                telemetry.addData("---", "---");
-                telemetry.addData("Cmd Fwd | Right",    "%.2f | %.2f", result.stickForward, result.stickRight);
-                telemetry.addData("Robot Fwd | Right",  "%.2f | %.2f", result.robotForward, result.robotRight);
-                telemetry.addData("Twist",              "%.2f", result.twist);
-                telemetry.addData("FL | FR",            "%.2f | %.2f", wheelPowers[0], wheelPowers[1]);
-                telemetry.addData("BL | BR",            "%.2f | %.2f", wheelPowers[2], wheelPowers[3]);
-                telemetry.addData("FL Vel | FR Vel",    "%.0f | %.0f", params.flVelocity, params.frVelocity);
-                telemetry.addData("BL Vel | BR Vel",    "%.0f | %.0f", params.blVelocity, params.brVelocity);
                 telemetry.update();
             }
         } finally {
@@ -600,6 +688,40 @@ public class iamyou extends LinearOpMode {
     }
 
     /** One telemetry line saying what the aimer is doing, or why it is not. */
+    /**
+     * Big enough to see from the driver's spot: a solid white block when the flywheel is at speed, an empty box when
+     * it is not (with how far up to speed it is), one short line when it is off.
+     */
+    static String[] shotIndicator(boolean on, boolean ready, double ticksPerSec) {
+        if (!on) {
+            return new String[]{"\u2610 FLYWHEEL OFF"};
+        }
+        String solid = repeat('\u2588', 22);
+        if (ready) {
+            return new String[]{solid, solid, "\u2588\u2588\u2588  READY TO SHOOT  \u2588\u2588\u2588", solid, solid};
+        }
+        String percent = String.format(java.util.Locale.US, "NOT READY  %.0f%%",
+                100.0 * Math.max(0.0, ticksPerSec) / FLYWHEEL_TARGET_TPS);
+        return new String[]{
+                "\u250C" + repeat('\u2500', 20) + "\u2510",
+                "\u2502" + repeat(' ', 30) + "\u2502",
+                "\u2502      " + percent + "      \u2502",
+                "\u2502" + repeat(' ', 30) + "\u2502",
+                "\u2514" + repeat('\u2500', 20) + "\u2518"};
+    }
+
+    private static String repeat(char c, int n) {
+        StringBuilder b = new StringBuilder(n);
+        for (int i = 0; i < n; i++) {
+            b.append(c);
+        }
+        return b.toString();
+    }
+
+    static double ticksPerSecToRpm(double ticksPerSec) {
+        return ticksPerSec * 60.0 / FLYWHEEL_TICKS_PER_REV;
+    }
+
     private static String aimStatus(CellAimer aimer, CellAimer.Aim aim, boolean flywheelOn) {
         if (aimer == null) {
             return "off (no camera or no alliance picked before START)";
@@ -686,6 +808,19 @@ public class iamyou extends LinearOpMode {
     static final double JOYSTICK_DEADZONE        = 0.08;
     static final double SLOW_MODE_DRIVE_MULT     = 0.35;
     static final double SLOW_MODE_TWIST_MULT     = 0.50;
+    /**
+     * Normal (not slow mode) drive speed. 1.0 = full power at full stick. 1.5 = 50 % more power at every stick
+     * position, so full power is reached at two-thirds stick (it can't go past full power: the motors' limit).
+     */
+    static final double DRIVE_MULT               = 1.5;
+    /** Normal (not slow mode) turn speed, same idea: 1.5 = full-power turn at two-thirds stick. */
+    static final double TWIST_MULT               = 1.5;
+    /**
+     * Driving and turning at once can ask a wheel for more than full power; this decides who gives way.
+     * 0.5 = both slow down by the same percentage (full stick + full twist = 50 % drive + 50 % turn).
+     * 1.0 = turning keeps its speed and driving gets what's left. 0.0 = driving keeps its speed.
+     */
+    static final double TURN_PRIORITY            = 0.5;
     static final double SLOW_MODE_TRIGGER_THRESH = 0.10;
 
     /**
@@ -847,24 +982,50 @@ public class iamyou extends LinearOpMode {
 
             // ================= SLOW MODE =================
             boolean slow = finite(params.leftTrigger, 0.0) > SLOW_MODE_TRIGGER_THRESH;
-            double driveMult = slow ? SLOW_MODE_DRIVE_MULT : 1.0;
-            double twistMult = slow ? SLOW_MODE_TWIST_MULT : 1.0;
+            double driveMult = slow ? SLOW_MODE_DRIVE_MULT : DRIVE_MULT;
+            double twistMult = slow ? SLOW_MODE_TWIST_MULT : TWIST_MULT;
             double d = robotForward * driveMult;
             double s = robotRight * STRAFE_COMPENSATION * driveMult;
-            double t = twist * twistMult;
+            double t = Math.max(-1.0, Math.min(1.0, twist * twistMult));   // full turn power at most
 
             boolean released = stick[0] == 0.0 && stick[1] == 0.0 && twist == 0.0;
             double[] out = new double[4];
             boolean braking = false;
             if (!released) {
                 // ================= MECANUM MIXER (positive t = clockwise) =================
+                // A wheel can't go past full power, and driving and turning share it: full stick + full twist asks
+                // every wheel for 200 %, so something has to give. TURN_PRIORITY picks what: at 0.5 both are cut by
+                // the same percentage (the curve the sticks ask for is kept exactly), higher keeps more turn,
+                // lower keeps more drive. Below full power on every wheel nothing is cut at all.
+                double[] move = {d + s, d - s, d - s, d + s};
+                double moveMax = Math.max(1.0, Math.max(Math.abs(d + s), Math.abs(d - s)));
+                for (int k = 0; k < 4; k++) {
+                    move[k] /= moveMax;
+                }
+                double moveBiggest = Math.max(Math.abs(move[0]), Math.abs(move[1]));
+                double turn = t;
+                double asked = moveBiggest + Math.abs(t);
+                if (asked > 1.0) {
+                    double even = Math.abs(t) / asked;                  // both cut by the same percentage
+                    double turnFirst = Math.min(Math.abs(t), 1.0);      // turn keeps all it can
+                    double driveFirst = Math.max(0.0, 1.0 - moveBiggest); // turn gets only what drive leaves
+                    double p = Math.max(0.0, Math.min(1.0, TURN_PRIORITY));
+                    double turnShare = p >= 0.5
+                            ? even + (turnFirst - even) * (p - 0.5) * 2.0
+                            : even + (driveFirst - even) * (0.5 - p) * 2.0;
+                    turn = Math.copySign(turnShare, t);
+                    double moveRoom = 1.0 - turnShare;
+                    for (int k = 0; k < 4; k++) {
+                        move[k] = moveBiggest > 0.0 ? move[k] * moveRoom / moveBiggest : 0.0;
+                    }
+                }
                 double[] mix = {
-                        frictionBoost(d + s + t),
-                        frictionBoost(d - s - t),
-                        frictionBoost(d - s + t),
-                        frictionBoost(d + s - t)
+                        frictionBoost(move[0] + turn),
+                        frictionBoost(move[1] - turn),
+                        frictionBoost(move[2] + turn),
+                        frictionBoost(move[3] - turn)
                 };
-                // Scale by the largest wheel so the direction is kept when a wheel would pass full power.
+                // The friction boost can nudge a wheel past full power; scale back so the direction is kept.
                 double max = 1.0;
                 for (double w : mix) {
                     max = Math.max(max, Math.abs(w));
@@ -1360,6 +1521,33 @@ public class iamyou extends LinearOpMode {
             backupSinceZero = 0.0;
         }
 
+        /**
+         * Forgets everything: heading, both sensors' baselines, drift, holds, glitch count and the backup's
+         * agreement record. Call it together with resetting the sensors themselves (the Logitech logo button does): the
+         * next good reading of each sensor starts fresh, with the robot's current front as NORTH.
+         */
+        void fullReset() {
+            heading = 0.0;
+            primarySinceZero = 0.0;
+            backupSinceZero = 0.0;
+            lastPrimary = Double.NaN;
+            lastBackup = Double.NaN;
+            primaryGap = true;
+            backupGap = true;
+            rejected = 0;
+            usedBackup = false;
+            sumPrimarySquared = 0.0;
+            sumPrimaryTimesBackup = 0.0;
+            judgedTurn = 0.0;
+            lastFault = null;
+            stillSeconds = 0.0;
+            driftDegPerSec = 0.0;
+            heldTurn = 0.0;
+            heldSeconds = 0.0;
+            sampleTurn = 0.0;
+            sampleSeconds = 0.0;
+        }
+
         double heading() {
             return heading;
         }
@@ -1541,47 +1729,170 @@ public class iamyou extends LinearOpMode {
     }
 
     // =====================================================================================================
-    // FLYWHEEL (OUTTAKE) MATH
+    // FLYWHEEL (OUTTAKE) VELOCITY PIDF
     //
-    // One press turns the flywheel on, the next turns it off. It runs open loop at OUTTAKE_POWER for now; velocity
-    // PID comes later. Spin-up is ramped so the motor and gears never see a full-power step; turning it off cuts
-    // power at once and the wheel coasts down (the motor is set to FLOAT).
+    // One press turns the flywheel on, the next turns it off. While ON it holds FLYWHEEL_TARGET_TPS (encoder ticks per
+    // second) with a PIDF loop run here on the Control Hub every loop, not the hub's built-in velocity mode, so every
+    // term is visible in telemetry and the same class runs in the tuning OpMode (FlywheelPIDFTuning) and the tests.
+    //
+    //   power = (kS + kV * target) * 12 V / battery        feedforward: the power that holds this speed by itself
+    //         + kP * error                                  pushes back toward the target after a shot slows the wheel
+    //         + kI * (sum of error)                         removes the last small steady error (friction, wear)
+    //         - kD * (rate the wheel is speeding up)        damps overshoot; 0 is usually fine for a flywheel
+    //
+    // The feedforward is scaled by battery voltage, so a full battery and a tired one shoot the same distance: that is
+    // what the old fixed OUTTAKE_POWER could not do. Power stays between 0 and 1: the flywheel is never driven
+    // backwards and never braked; above target it just coasts down (motor set to FLOAT).
+    //
+    // TUNING (run "Flywheel PIDF Tuning", copy the numbers back here):
+    //   1. kP = kI = kD = 0. Raise kV until the wheel settles at the target by itself (a bit under is fine).
+    //   2. Raise kP until a shot's dip recovers fast without the speed bouncing around the target.
+    //   3. Only if it still settles a little low, add a small kI.
     // =====================================================================================================
 
-    /** Flywheel power while ON. Half power for now; velocity PID will replace this. */
-    static final double OUTTAKE_POWER         = 0.505;
-    /** Spin-up limit in power-per-second. 4.0 = 0 to full in a quarter second. */
-    static final double OUTTAKE_RAMP_PER_SEC  = 4.0;
+    /** Flywheel speed while ON, in encoder ticks per second (the 6000 rpm motor's free speed is about 2800). */
+    static final double FLYWHEEL_TARGET_TPS = 1349.0;   // = 2891 rpm
+    /** Encoder ticks per flywheel turn: the 6000 rpm motor's 28, geared 1:1. */
+    static final double FLYWHEEL_TICKS_PER_REV = 28.0;
+    /** Power to break static friction, at 12 V. */
+    static final double FLYWHEEL_KS = 0.03;
+    /** Power per tick/s at 12 V. 1 / 2800 would be exactly the motor's free speed; a loaded wheel needs a bit more. */
+    static final double FLYWHEEL_KV = 0.0003;
+    /** Power per tick/s of error. 100 ticks/s low = +0.05 power. */
+    static final double FLYWHEEL_KP = 0.0005;   // tuned on the robot
+    /** Power per (tick/s x second) of summed error. */
+    static final double FLYWHEEL_KI = 0.0002;
+    /** Power per tick/s/s of measured acceleration. */
+    static final double FLYWHEEL_KD = 0.0;
+    /** The I term only builds up this close to the target, so spin-up and shot dips don't wind it up. */
+    static final double FLYWHEEL_I_ZONE_TPS = 150.0;
+    /** The I term never adds or removes more power than this. */
+    static final double FLYWHEEL_I_MAX_POWER = 0.15;
+    /** "READY" once the speed has been within this of the target for FLYWHEEL_READY_SEC. */
+    static final double FLYWHEEL_READY_TOLERANCE_TPS = 50.0;
+    static final double FLYWHEEL_READY_SEC = 0.15;
+    /** Voltage the gains above were tuned at. */
+    static final double FLYWHEEL_NOMINAL_VOLTS = 12.0;
 
-    /** Flywheel state carried between loops: on/off and the spin-up ramp. */
+    /** A velocity PIDF controller with gains that can be changed live (the tuning OpMode does). */
+    static class FlywheelPIDF {
+        double kS = FLYWHEEL_KS;
+        double kV = FLYWHEEL_KV;
+        double kP = FLYWHEEL_KP;
+        double kI = FLYWHEEL_KI;
+        double kD = FLYWHEEL_KD;
+
+        private double integral = 0.0;          // in power, already multiplied by kI
+        private double lastVelocity = Double.NaN;
+        private double accel = 0.0;             // filtered, ticks/s/s
+        private double readySeconds = 0.0;
+        private double error = 0.0;
+        private double feedforward = 0.0;
+        private double proportional = 0.0;
+        private double derivative = 0.0;
+
+        /**
+         * @param targetTps   wanted speed, ticks per second (0 or less = off)
+         * @param measuredTps the encoder's speed, ticks per second
+         * @param volts       battery voltage (NaN or nonsense = assume nominal)
+         * @param dtSeconds   time since the previous call
+         * @return motor power, 0 to 1
+         */
+        double update(double targetTps, double measuredTps, double volts, double dtSeconds) {
+            double dt = Math.max(0.001, Math.min(0.1, finite(dtSeconds, 0.02)));
+            double target = finite(targetTps, 0.0);
+            double measured = finite(measuredTps, Double.isNaN(lastVelocity) ? 0.0 : lastVelocity);
+            double v = finite(volts, FLYWHEEL_NOMINAL_VOLTS);
+            if (v < 7.0 || v > 16.0) {
+                v = FLYWHEEL_NOMINAL_VOLTS;
+            }
+
+            if (!Double.isNaN(lastVelocity)) {
+                double rawAccel = (measured - lastVelocity) / dt;
+                accel += (rawAccel - accel) * 0.3;
+            }
+            lastVelocity = measured;
+
+            if (target <= 0.0) {
+                reset();
+                lastVelocity = measured;
+                return 0.0;
+            }
+
+            error = target - measured;
+            double voltScale = FLYWHEEL_NOMINAL_VOLTS / v;
+            feedforward = (kS + kV * target) * voltScale;
+            proportional = kP * error;
+            derivative = -kD * accel;
+
+            if (Math.abs(error) < FLYWHEEL_I_ZONE_TPS) {
+                double unclamped = feedforward + proportional + derivative + integral;
+                boolean pushingPastLimit = (unclamped >= 1.0 && error > 0) || (unclamped <= 0.0 && error < 0);
+                if (!pushingPastLimit) {
+                    integral += kI * error * dt;
+                }
+                integral = Math.max(-FLYWHEEL_I_MAX_POWER, Math.min(FLYWHEEL_I_MAX_POWER, integral));
+            }
+
+            readySeconds = Math.abs(error) <= FLYWHEEL_READY_TOLERANCE_TPS ? readySeconds + dt : 0.0;
+
+            double power = feedforward + proportional + integral + derivative;
+            return Math.max(0.0, Math.min(1.0, finite(power, 0.0)));
+        }
+
+        /** Forget the I term and the ready timer (called whenever the flywheel is off). */
+        void reset() {
+            integral = 0.0;
+            readySeconds = 0.0;
+            error = 0.0;
+            feedforward = proportional = derivative = 0.0;
+        }
+
+        boolean isReady() {
+            return readySeconds >= FLYWHEEL_READY_SEC;
+        }
+
+        double error() {
+            return error;
+        }
+
+        /** "F 0.79  P 0.01  I 0.02  D 0.00": what each term is adding right now. */
+        String terms() {
+            return String.format(java.util.Locale.US, "F %.2f  P %.2f  I %.2f  D %.2f",
+                    feedforward, proportional, integral, derivative);
+        }
+    }
+
+    /** Flywheel state carried between loops: on/off toggle plus the PIDF. */
     static class Outtake {
+        final FlywheelPIDF pidf = new FlywheelPIDF();
         private boolean on = false;
         private boolean lastButton = false;
         private double power = 0.0;
 
         /**
          * @param toggleButton true while the flywheel button is held; each new press flips ON/OFF
+         * @param measuredTps  flywheel encoder speed, ticks per second
+         * @param volts        battery voltage
          * @param dtSeconds    time since the previous loop
          * @return the power to send to the flywheel motor
          */
-        double update(boolean toggleButton, double dtSeconds) {
-            double dt = Math.max(0.001, Math.min(0.1, finite(dtSeconds, 0.02)));
+        double update(boolean toggleButton, double measuredTps, double volts, double dtSeconds) {
             if (toggleButton && !lastButton) {
                 on = !on;
             }
             lastButton = toggleButton;
-
-            if (!on) {
-                power = 0.0;
-            } else {
-                double step = OUTTAKE_RAMP_PER_SEC * dt;
-                power += Math.max(-step, Math.min(step, OUTTAKE_POWER - power));
-            }
+            power = pidf.update(on ? FLYWHEEL_TARGET_TPS : 0.0, measuredTps, volts, dtSeconds);
             return power;
         }
 
         boolean isOn() {
             return on;
+        }
+
+        /** True when ON and holding the target speed: safe to feed a ball. */
+        boolean isReady() {
+            return on && pidf.isReady();
         }
     }
 }

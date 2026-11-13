@@ -70,11 +70,17 @@ class IamYouTest {
     }
 
     @Test
-    void testHalfStickIsAboutHalfPower() {
-        // Linear response: no curve to make small movements feel dead.
+    void testHalfStickIsHalfPowerTimesTheDriveMultiplier() {
+        // Linear response, scaled by DRIVE_MULT: no curve to make small movements feel dead.
         double fl = once(0.0, -0.5, 0.0, 0.0, SOUTH).powers.getFL();
         double stick = (0.5 - iamyou.JOYSTICK_DEADZONE) / (1.0 - iamyou.JOYSTICK_DEADZONE);
-        assertEquals(stick + iamyou.STATIC_FRICTION_POWER, fl, EPS);
+        assertEquals(stick * iamyou.DRIVE_MULT + iamyou.STATIC_FRICTION_POWER, fl, EPS);
+    }
+
+    @Test
+    void testSlowModeSpeedIsUnchangedByTheDriveMultiplier() {
+        double fl = new iamyou.Drive().calculate(input(0.0, -1.0, 0.0, 1.0, 0.0, SOUTH, 0.0)).powers.getFL();
+        assertEquals(iamyou.SLOW_MODE_DRIVE_MULT + iamyou.STATIC_FRICTION_POWER, fl, EPS);
     }
 
     @Test
@@ -273,6 +279,31 @@ class IamYouTest {
         t.zero();
         turnBoth(t, 170.0, 5.0, 40);   // 200 degrees CCW, crossing +180/-180
         assertEquals(-160.0, t.heading(), 1e-6, "200 degrees CCW reads as 160 degrees CW");
+    }
+
+    @Test
+    void testAFullResetStartsOverFromTheSensorsNewZero() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        double h = turnBoth(t, 0.0, 3.0, 40);                      // 120 degrees CCW
+        assertEquals(120.0, t.heading(), 1e-6);
+        // Share pressed: the tracker forgets everything and both sensors are reset to 0 (the Pinpoint calibrates
+        // for a few loops first). The robot is standing still the whole time.
+        t.fullReset();
+        assertEquals(0.0, t.heading(), 0.0);
+        for (int i = 0; i < 12; i++) {
+            t.update(h, false, 0.0, true, DT, true);                // calibrating: the old reading, not fresh
+        }
+        assertEquals(0.0, t.heading(), 1e-6, "nothing moves while the Pinpoint calibrates");
+        // READY again, now reading from 0; the robot turns 30 degrees clockwise.
+        double fresh = 0.0;
+        t.update(fresh, true, 0.0, true, DT);
+        for (int i = 0; i < 10; i++) {
+            fresh -= 3.0;
+            t.update(fresh, true, fresh, true, DT);
+        }
+        assertEquals(-30.0, t.heading(), 1e-6);
+        assertEquals(0, t.rejectedReadings());
     }
 
     @Test
@@ -575,6 +606,125 @@ class IamYouTest {
             check.update(0.0, 0.0, 0.0, 40.0, 0.0, 300.0, DT);
         }
         assertTrue(check.report().startsWith("fwd ?  strafe ?  turn ?"), check.report());
+    }
+
+    // ------------------------------------------------------------------ driving while turning
+
+    @Test
+    void testFullDriveAndFullTwistShareThePowerEvenly() {
+        double[] w = wheels(once(0.0, -1.0, 1.0, 0.0, SOUTH));
+        double turn = (w[0] - w[1] + w[2] - w[3]) / 4.0;
+        double forward = (w[0] + w[1] + w[2] + w[3]) / 4.0;
+        assertEquals(forward, turn, 0.03);
+        assertTrue(turn > 0.45 && forward > 0.45, "turn " + turn + " forward " + forward);
+        for (double p : w) {
+            assertTrue(Math.abs(p) <= 1.0 + 1e-12);
+        }
+    }
+
+    @Test
+    void testFullTwistWhileDrivingSlowlyStillTurnsHard() {
+        double[] w = wheels(once(0.0, -0.5, 1.0, 0.0, SOUTH));
+        double turn = (w[0] - w[1] + w[2] - w[3]) / 4.0;
+        assertTrue(turn > 0.6, "turn " + turn);
+    }
+
+    @Test
+    void testASmallTurnWhileDrivingSlowlyIsNotCut() {
+        double[] w = wheels(once(0.0, -0.4, 0.3, 0.0, SOUTH));
+        double turn = (w[0] - w[1] + w[2] - w[3]) / 4.0;
+        double forward = (w[0] + w[1] + w[2] + w[3]) / 4.0;
+        assertTrue(turn > 0.2 && forward > 0.3, "turn " + turn + " forward " + forward);
+    }
+
+    // ------------------------------------------------------------------ flywheel PIDF
+
+    /**
+     * A flywheel that settles, a third of a second later, at the speed its power and battery give it. It needs more
+     * than the tuned feedforward guesses (friction 0.04, 3200 ticks/s per unit at 12 V, where kV = 0.0003 says 3333),
+     * so P and I have work to do.
+     */
+    private static final class FlywheelModel {
+        double tps = 0.0;
+
+        void step(double power, double volts, double dt) {
+            double steady = Math.max(0.0, power * volts / 12.0 - 0.04) * 3200.0;
+            tps += (steady - tps) * dt / 0.3;
+        }
+    }
+
+    private static double runFlywheel(iamyou.Outtake out, FlywheelModel wheel, double volts, double seconds) {
+        double power = 0.0;
+        for (int i = 0; i < Math.round(seconds / DT); i++) {
+            power = out.update(false, wheel.tps, volts, DT);
+            assertTrue(power >= 0.0 && power <= 1.0, "power " + power);
+            wheel.step(power, volts, DT);
+        }
+        return power;
+    }
+
+    @Test
+    void testFlywheelReachesTheTargetAndSaysReady() {
+        iamyou.Outtake out = new iamyou.Outtake();
+        FlywheelModel wheel = new FlywheelModel();
+        out.update(true, 0.0, 12.5, DT);                        // press: ON
+        assertTrue(out.isOn());
+        assertFalse(out.isReady());
+        runFlywheel(out, wheel, 12.5, 3.0);
+        assertEquals(iamyou.FLYWHEEL_TARGET_TPS, wheel.tps, iamyou.FLYWHEEL_READY_TOLERANCE_TPS);
+        assertTrue(out.isReady());
+    }
+
+    @Test
+    void testFlywheelHoldsTheSameSpeedOnAFullAndATiredBattery() {
+        for (double volts : new double[]{13.5, 12.0, 11.0}) {
+            iamyou.Outtake out = new iamyou.Outtake();
+            FlywheelModel wheel = new FlywheelModel();
+            out.update(true, 0.0, volts, DT);
+            runFlywheel(out, wheel, volts, 4.0);
+            assertEquals(iamyou.FLYWHEEL_TARGET_TPS, wheel.tps, iamyou.FLYWHEEL_READY_TOLERANCE_TPS, volts + " V");
+        }
+    }
+
+    @Test
+    void testFlywheelRecoversFromAShotDipWithoutOvershootingMuch() {
+        iamyou.Outtake out = new iamyou.Outtake();
+        FlywheelModel wheel = new FlywheelModel();
+        out.update(true, 0.0, 12.5, DT);
+        runFlywheel(out, wheel, 12.5, 3.0);
+        wheel.tps -= 400.0;                                     // a ball takes energy out of the wheel
+        assertFalse(runFlywheel(out, wheel, 12.5, DT) > 1.0);
+        assertFalse(out.isReady());
+        double worst = 0.0;
+        for (int i = 0; i < 50; i++) {                          // one second
+            runFlywheel(out, wheel, 12.5, DT);
+            worst = Math.max(worst, wheel.tps - iamyou.FLYWHEEL_TARGET_TPS);
+        }
+        assertTrue(worst < 100.0, "overshoot " + worst);
+        assertTrue(out.isReady(), "back up to speed within a second");
+    }
+
+    @Test
+    void testFlywheelOffMeansZeroPowerAndForgetsTheITerm() {
+        iamyou.Outtake out = new iamyou.Outtake();
+        FlywheelModel wheel = new FlywheelModel();
+        out.update(true, 0.0, 12.5, DT);
+        runFlywheel(out, wheel, 12.5, 3.0);
+        out.update(false, wheel.tps, 12.5, DT);
+        assertEquals(0.0, out.update(true, wheel.tps, 12.5, DT), EPS);   // press again: OFF
+        assertFalse(out.isOn());
+        assertFalse(out.isReady());
+        assertEquals("F 0.00  P 0.00  I 0.00  D 0.00", out.pidf.terms());
+    }
+
+    @Test
+    void testFlywheelIsNeverDrivenBackwardsOrHurtByBadNumbers() {
+        iamyou.FlywheelPIDF pidf = new iamyou.FlywheelPIDF();
+        assertEquals(0.0, pidf.update(2100.0, 4000.0, 12.0, DT), EPS);   // far too fast: coast, don't brake
+        for (double b : new double[]{Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY}) {
+            double p = pidf.update(2100.0, b, b, b);
+            assertTrue(p >= 0.0 && p <= 1.0, "power " + p);
+        }
     }
 
     // ------------------------------------------------------------------ NaN safety
