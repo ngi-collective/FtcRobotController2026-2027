@@ -1223,8 +1223,12 @@ public class iamyou extends LinearOpMode {
     //  - The Pinpoint is powered through its I2C cable. Hard driving can dip the voltage enough to restart it; it then
     //    reports heading 0 and recalibrates its gyro while the robot is moving, so a raw reading would be wrong from
     //    then on. Read as turns, the restart is one impossible jump, which is ignored.
-    //  - A loop where the Pinpoint is frozen (restarting, calibrating, or a bad read the driver covers by repeating
-    //    the previous value) or turns faster than any robot can uses the Control Hub IMU's turn instead - once the
+    //  - A bad read (FAULT_BAD_READ) is NOT a gap: the SDK driver then keeps the previous heading, or the new one if
+    //    only another value (a velocity) was bad, so the next reading's change from the last one is exactly the turn
+    //    made meanwhile and is counted. Treating it as a gap threw that turn away on every bad read, and the turn
+    //    scale measured with the turns missing (4 % "under-read") then over-counted every turn the robot made.
+    //  - A loop where the Pinpoint is frozen (restarting or calibrating: it re-zeros) or turns faster than any robot
+    //    can uses the Control Hub IMU's turn instead - once the
     //    IMU has been seen to turn the same way and by the same amount as the Pinpoint. A backup that turns the other
     //    way is never used: which of the two is backwards is settled by hand (PINPOINT_HEADING_REVERSED and
     //    HUB_IMU_HEADING_REVERSED), not guessed. Untrusted, a frozen stretch holds the heading.
@@ -1256,8 +1260,10 @@ public class iamyou extends LinearOpMode {
      *  3. Read the Sensors line: "main" should say 3600 (or -3600), "backup" the same.
      *  4. Set the scale to 3600 / |reading|, e.g. main 3528 -> PINPOINT_TURN_SCALE = 3600 / 3528.0 = 1.0204.
      */
-    // Measured 2026-11-08: ten full turns read 3453 on the Pinpoint (it under-reads every turn by 4.1 %).
-    static final double PINPOINT_TURN_SCALE = 3600.0 / 3453.0;
+    // 2026-11-08 measured 3453 for ten turns, but that run threw away the turn of every bad-read loop (see HEADING),
+    // so it measured the lost loops, not the gyro. The Pinpoint's gyro is calibrated at the factory: 1.0 until the
+    // spin test is redone with this code, with "glitches 0" on the Sensors line (any glitch spoils the run).
+    static final double PINPOINT_TURN_SCALE = 1.0;
     static final double HUB_IMU_TURN_SCALE = 1.0;
 
     /** A wheel slower than this (encoder ticks/sec) counts as stopped when deciding the robot is standing still. */
@@ -1281,6 +1287,11 @@ public class iamyou extends LinearOpMode {
     static final double MAX_TURN_RATE_DEG_PER_SEC = 1000.0;
     /** Slack on top of the rate limit, for a slow loop or a reading taken late. */
     static final double TURN_JUMP_SLACK_DEG = 5.0;
+    /**
+     * After loops of bad reads (heading held) the next reading carries all the turn made meanwhile, so the rate limit
+     * allows for that time too, up to this much.
+     */
+    static final double MAX_HELD_READING_SEC = 0.5;
     /** How much the robot must have turned, by both sensors, before the backup's agreement is judged. */
     static final double BACKUP_TRUST_AFTER_DEG = 45.0;
     /** The backup is trusted while its turns are this close to the main sensor's (1.0 = identical, same way round). */
@@ -1295,6 +1306,10 @@ public class iamyou extends LinearOpMode {
         private double primarySinceZero = 0.0;
         private double backupSinceZero = 0.0;
         private double lastPrimary = Double.NaN;
+        /** How long the main sensor has been reporting bad reads in a row (heading held): widens the rate limit. */
+        private double primaryHeldSeconds = 0.0;
+        /** True when this loop's main reading is a bad read (FAULT_BAD_READ). Set before update(). */
+        private boolean badRead = false;
         private double lastBackup = Double.NaN;
         /** True after a loop the main sensor was frozen: its next reading starts a new baseline, it is not a turn. */
         private boolean primaryGap = false;
@@ -1347,6 +1362,7 @@ public class iamyou extends LinearOpMode {
                 }
                 primaryScale = PINPOINT_TURN_SCALE;
                 backupScale = HUB_IMU_TURN_SCALE;
+                badRead = status == GoBildaPinpointDriver.DeviceStatus.FAULT_BAD_READ;
                 return update(signed(pinpoint.getHeading(AngleUnit.DEGREES), PINPOINT_HEADING_REVERSED),
                         freshHeading(status), imuYaw, imuRead, dtSeconds);
             }
@@ -1377,6 +1393,7 @@ public class iamyou extends LinearOpMode {
                       double dtSeconds) {
             double dt = Math.max(0.0, finite(dtSeconds, 0.02));
             double limit = MAX_TURN_RATE_DEG_PER_SEC * dt + TURN_JUMP_SLACK_DEG;
+            double primaryLimit = MAX_TURN_RATE_DEG_PER_SEC * (dt + primaryHeldSeconds) + TURN_JUMP_SLACK_DEG;
             boolean firstPrimary = Double.isNaN(lastPrimary);
             hasPrimary = isReading(primaryDeg);
             hasBackup = isReading(backupDeg);
@@ -1387,7 +1404,7 @@ public class iamyou extends LinearOpMode {
             // After a frozen stretch the main sensor's first reading is a new baseline, not a turn: the backup (or
             // nothing) already stood in for the motion it missed, and adding its catch-up would count it twice.
             double primaryTurn = fresh && !primaryGap ? turn(lastPrimary, primaryDeg) * primaryScale : Double.NaN;
-            boolean primaryOk = !Double.isNaN(primaryTurn) && Math.abs(primaryTurn) <= limit;
+            boolean primaryOk = !Double.isNaN(primaryTurn) && Math.abs(primaryTurn) <= primaryLimit;
 
             if (primaryOk && backupOk && Math.abs(primaryTurn) >= BACKUP_JUDGE_MIN_TURN_DEG) {
                 sumPrimarySquared += primaryTurn * primaryTurn;
@@ -1449,6 +1466,7 @@ public class iamyou extends LinearOpMode {
             }
 
             if (fresh) {
+                primaryHeldSeconds = badRead ? Math.min(MAX_HELD_READING_SEC, primaryHeldSeconds + dt) : 0.0;
                 lastPrimary = primaryDeg;
                 primaryGap = false;
             } else if (!firstPrimary) {
@@ -1484,12 +1502,14 @@ public class iamyou extends LinearOpMode {
         }
 
         /**
-         * Whether a Pinpoint status means its heading reading is current. Restarting, calibrating and a runaway gyro
-         * do not; nor does a bad read, because the driver then repeats the previous value. A missing pod does: heading
-         * comes from the gyro, not the pods.
+         * Whether a Pinpoint status means its heading reading continues from the last one, so the change between
+         * them is a turn. Restarting, calibrating and a runaway gyro do not (the heading re-zeros). A bad read does:
+         * the driver keeps the previous heading (or takes the new one when only another value was bad), so the next
+         * change still measures the turn exactly. A missing pod does too: heading comes from the gyro, not the pods.
          */
         static boolean freshHeading(GoBildaPinpointDriver.DeviceStatus status) {
             return status == GoBildaPinpointDriver.DeviceStatus.READY
+                    || status == GoBildaPinpointDriver.DeviceStatus.FAULT_BAD_READ
                     || status == GoBildaPinpointDriver.DeviceStatus.FAULT_X_POD_NOT_DETECTED
                     || status == GoBildaPinpointDriver.DeviceStatus.FAULT_Y_POD_NOT_DETECTED
                     || status == GoBildaPinpointDriver.DeviceStatus.FAULT_NO_PODS_DETECTED;
@@ -1506,6 +1526,11 @@ public class iamyou extends LinearOpMode {
         /** The measured gyro drift of the steering sensor, degrees per second, being subtracted while moving. */
         double driftDegPerSec() {
             return driftDegPerSec;
+        }
+
+        /** For tests: says the next main reading is a bad read, as update(pinpoint, imu) does from the status. */
+        void setBadRead(boolean badRead) {
+            this.badRead = badRead;
         }
 
         /** For tests: the turn scales update(pinpoint, imu) would take from the constants. */
@@ -1531,6 +1556,7 @@ public class iamyou extends LinearOpMode {
             primarySinceZero = 0.0;
             backupSinceZero = 0.0;
             lastPrimary = Double.NaN;
+            primaryHeldSeconds = 0.0;
             lastBackup = Double.NaN;
             primaryGap = true;
             backupGap = true;

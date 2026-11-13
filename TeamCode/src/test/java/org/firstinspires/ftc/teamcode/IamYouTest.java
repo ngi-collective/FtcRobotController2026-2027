@@ -450,18 +450,58 @@ class IamYouTest {
     }
 
     @Test
-    void testOnlyAMissingPodLeavesThePinpointHeadingFresh() {
+    void testOnlyARestartOrCalibrationBreaksThePinpointHeading() {
         assertTrue(iamyou.HeadingTracker.freshHeading(
                 com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.READY));
         assertTrue(iamyou.HeadingTracker.freshHeading(
                 com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.FAULT_Y_POD_NOT_DETECTED));
-        // A bad read is the driver repeating the previous value: frozen, not current.
-        assertFalse(iamyou.HeadingTracker.freshHeading(
+        // A bad read is the driver keeping the previous value (or a good new one): it still continues the last one.
+        assertTrue(iamyou.HeadingTracker.freshHeading(
                 com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.FAULT_BAD_READ));
         assertFalse(iamyou.HeadingTracker.freshHeading(
                 com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.CALIBRATING));
         assertFalse(iamyou.HeadingTracker.freshHeading(
                 com.qualcomm.hardware.gobilda.GoBildaPinpointDriver.DeviceStatus.NOT_READY));
+    }
+
+    @Test
+    void testBadReadsLoseNoTurn() {
+        // Turning 3 degrees a loop with no backup; every fifth loop is a bad read and the driver holds the heading.
+        // Each catch-up reading must count the turn made during the held loop: none of it may be lost.
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, Double.NaN, false, DT);
+        double gyro = 0.0;
+        double reported = 0.0;
+        for (int i = 1; i <= 600; i++) {                      // 1800 degrees: five full turns
+            gyro += 3.0;
+            boolean bad = i % 5 == 3;
+            if (!bad) {
+                reported = gyro;
+            }
+            t.setBadRead(bad);
+            t.update(wrap(reported), true, Double.NaN, false, DT);
+        }
+        assertEquals(wrap(gyro), t.heading(), 1e-6, "five turns with bad reads must end where the gyro does");
+        assertTrue(t.sensorReport().contains("main 1800.0"), t.sensorReport());
+        assertEquals(0, t.rejectedReadings(), "a bad read is not a glitch");
+    }
+
+    @Test
+    void testAStretchOfBadReadsIsCaughtUpNotRejected() {
+        // Ten bad reads in a row while turning fast: the catch-up is bigger than one loop's rate limit allows, but
+        // not bigger than the held time's.
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, Double.NaN, false, DT);
+        double gyro = 0.0;
+        for (int i = 0; i < 10; i++) {
+            gyro += 8.0;                                      // 400 deg/s
+            t.setBadRead(true);
+            t.update(0.0, true, Double.NaN, false, DT);
+        }
+        gyro += 8.0;
+        t.setBadRead(false);
+        t.update(wrap(gyro), true, Double.NaN, false, DT);
+        assertEquals(88.0, t.heading(), 1e-6);
     }
 
     @Test

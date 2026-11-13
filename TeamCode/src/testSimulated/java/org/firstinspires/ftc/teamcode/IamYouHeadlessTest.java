@@ -256,9 +256,9 @@ public class IamYouHeadlessTest {
             throw new IllegalStateException("the plain-JVM vision stack would not start", e);
         }
         hardware = new VerityRobot().create();
-        // The real robot's Pinpoint under-reads every turn by 4.1 % (ten turns read 3453), which iamyou corrects with
-        // PINPOINT_TURN_SCALE. The simulated gyro is perfect, so it is made to under-read the same way, through the
-        // device's own yaw-scale register, for the correction to have something to correct.
+        // iamyou multiplies every Pinpoint turn by PINPOINT_TURN_SCALE. The simulated gyro is perfect, so it is made to
+        // misread by the inverse, through the device's own yaw-scale register, for the correction to have something
+        // to correct whatever the constant is set to.
         hardware.get(GoBildaPinpointDriver.class, "pinpoint").setYawScalar(1.0 / iamyou.PINPOINT_TURN_SCALE);
         hardware.drive().setPose(Pose2d.ORIGIN);
         harness = OpModeHarness.forLinear(new iamyou(), hardware);
