@@ -133,12 +133,33 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit, as
   (`RaisedCellWatch`), and a camera sending no frames is never read as a TIP. Anything blocking
   the view reads as a TIP too.
 - **The `… Tip-Aware` AUTOs** (`TipAwareAuto`) read that through INIT, commit at START, shoot
-  from the side the raised CELL faces (`SHOOT`, or `REAR_START` against the wall), and look again
-  before every shot: turned away with 18 s left, they drive round (7–8 s); with less, they park
-  without shooting. Only a robot shooting from the front collects, one trip per shot: GARDEN,
-  shoot, then FLOWER, shoot, each only if it and the park still fit. In practice the FLOWER
-  trip never fits after the GARDEN one, and a trip from the rear does not fit at all. `TipAwareAutoAcceptanceTest` runs all four starts
-  on `match-setup` and `tipped-match-setup`, about 4 minutes in real time.
+  from the side the raised CELL faces, and look again before every shot: turned away with 18 s
+  left, they drive round (7–8 s); with less, they park without shooting. Only a robot shooting
+  from the front collects, one trip per shot: GARDEN, shoot, then FLOWER, shoot, each only if it
+  and the park still fit. In practice the FLOWER trip never fits after the GARDEN one, and a trip
+  from the rear does not fit at all. The four `… Tip-Aware Preload` AUTOs (`Routine.PRELOAD_AND_PARK`)
+  shoot the pre-loads from the raised side and park; Right drives round first if it must, then
+  holds the shot until 15 s after START. The `…TipAwareTest` and `…TipAwarePreloadTest` classes
+  run them on `match-setup` and `tipped-match-setup`, with the simulated camera at 10 frames a
+  second (`TipAwareAutoRun`), because software-rendered frames at 30 starved the follower loop.
+- **Every shot is taken against the wall.** Paths back to a shot end an inch off it (`SHOOT`), and
+  the shot settles on `FRONT_WALL_SHOT` or `REAR_WALL_SHOT`, 0.4 in inside the wall, so the follower
+  holds the chassis pressed flat against it through the shot.
+- **The flywheel is set up for `setVelocity` at every AUTO's INIT** (`shootCommand.configure`):
+  `RUN_USING_ENCODER` plus explicit PIDF, the REV hub's defaults, because the hub keeps whatever
+  mode and gains were last set, and the TeleOp leaves it open loop while `FlywheelPIDFTuning`
+  zeroes P and F.
+- **Every Pedro AUTO keeps the same rules** (`AutoTimeline`, run on all sixteen by the
+  `…AutoTimelineTest` and `…TipAware…Test` classes): pre-loads shot before any intake,
+  one collection per shot, no intake while shooting, settle on the spot before a shot, spin the
+  flywheel up at least 0.5 s before staging feeds, parked in the LOADING ZONE inside 30 s. The
+  sim's motors reach a commanded speed at once, so it cannot check that 0.5 s is long enough.
+- **The AUTO tests run in real time**, two to a class so Gradle's four forks
+  (`TeamCode/build.gradle`) run them side by side: about 3 minutes for `mise run test`. In the
+  sim an OpMode loop never waits on hardware, so each one spins a whole core; more forks, or
+  dropping the `idle()` in the AUTO loops, starves them, and the symptom is parks stalling and
+  routines overrunning 30 s rather than slowness. `mise run test` also holds off sleep, since a
+  suspend part-way fails every run it spans.
 - **`robotPose` is useless this season.** The SDK declares all four BioBuzz clusters at
   `fieldPosition = (0,0,0)` with an identity orientation, so anything absolute must be built from
   relative measurements.

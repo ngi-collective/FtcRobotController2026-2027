@@ -29,9 +29,17 @@ run = "./gradlew :TeamCode:assembleRobotDebug"
 description = "Build and adb install to a connected Robot Controller device"
 run = "./gradlew :TeamCode:installRobotDebug"
 
+# The AUTO tests run against the wall clock, so a laptop suspending part-way fails them on time
+# (one run here "took" 8,061 s). Hold off sleep where logind allows it; CI has no logind and just
+# runs Gradle.
 [tasks.test]
 description = "Run TeamCode's unit tests, headless simulated ones included"
-run = "./gradlew :TeamCode:testSimulatedDebugUnitTest"
+run = """
+if systemd-inhibit --what=sleep:idle true 2>/dev/null; then
+  exec systemd-inhibit --what=sleep:idle --who="mise run test" --why="real-time simulator tests" ./gradlew :TeamCode:testSimulatedDebugUnitTest
+fi
+exec ./gradlew :TeamCode:testSimulatedDebugUnitTest
+"""
 
 # Runs the real Robot Controller app against fake hardware on whatever device adb is pointing at -
 # in practice an emulator. Create one first (once):

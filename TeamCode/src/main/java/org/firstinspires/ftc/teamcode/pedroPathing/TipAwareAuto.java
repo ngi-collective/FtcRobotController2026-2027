@@ -11,13 +11,16 @@ import static org.firstinspires.ftc.teamcode.IntakeCommands.stopIntake;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.AT_FLOWER;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.FLOWER_DWELL_MS;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.FRONT_START;
+import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.FRONT_WALL_SHOT;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.GARDEN_END;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.GARDEN_ENTRY;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.METRES_PER_INCH;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.PARK;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.PATH_TIMEOUT_MS;
+import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.PRELOAD_RIGHT_DELAY_MS;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.REAR_CLEAR;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.REAR_START;
+import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.REAR_WALL_SHOT;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.SHOOT;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.direction;
 import static org.firstinspires.ftc.teamcode.pedroPathing.AllianceAuto.pose;
@@ -63,10 +66,14 @@ import java.util.List;
  * shooting at a CELL that scores nothing. A dead camera never turns the robot round: with no
  * frames it keeps to the match-start arrangement, or to whatever it last saw.</p>
  *
- * <p>It collects from the GARDEN and the alliance-wall FLOWER one at a time, shooting after each,
- * and only when shooting from the front: both are on that side, and a trip from the rear does not
- * fit in an AUTO. Each trip starts only if it, its shot and the park still fit
- * ({@link #GARDEN_TRIP_MS}, {@link #FLOWER_TRIP_MS}, {@link #PARK_MS}).</p>
+ * <p>{@link Routine#FULL} collects from the GARDEN and the alliance-wall FLOWER one at a time,
+ * shooting after each, and only when shooting from the front: both are on that side, and a trip
+ * from the rear does not fit in an AUTO. Each trip starts only if it, its shot and the park still
+ * fit ({@link #GARDEN_TRIP_MS}, {@link #FLOWER_TRIP_MS}, {@link #PARK_MS}).
+ * {@link Routine#PRELOAD_AND_PARK} shoots the pre-loads and parks; a Right start drives round
+ * first if it must, then holds its first shot until 15 s after START.</p>
+ *
+ * <p>Every shot is taken pressed against the wall behind the shooting spot.</p>
  */
 public abstract class TipAwareAuto extends LinearOpMode {
 
@@ -76,6 +83,14 @@ public abstract class TipAwareAuto extends LinearOpMode {
         FRONT,
         /** {@link AllianceAuto#REAR_START}: behind the HIVE. */
         REAR
+    }
+
+    /** What it does once it knows which side to shoot from. */
+    public enum Routine {
+        /** Shoot, then a GARDEN and a FLOWER trip if they fit, each followed by a shot; PARK. */
+        FULL,
+        /** Shoot the pre-loads and PARK. A Right start shoots no earlier than 15 s in. */
+        PRELOAD_AND_PARK
     }
 
     /** An AUTO is 30 s; everything is timed against this from START. */
@@ -118,6 +133,7 @@ public abstract class TipAwareAuto extends LinearOpMode {
     private final PoseFactory alliance;
     private final boolean red;
     private final Start startSpot;
+    private final Routine routine;
 
     private Follower follower;
     private DcMotorEx flywheel;
@@ -145,11 +161,13 @@ public abstract class TipAwareAuto extends LinearOpMode {
     /**
      * @param alliance {@link AllianceAuto#RED} or {@link AllianceAuto#BLUE}
      * @param startSpot where the robot is set down
+     * @param routine what it does
      */
-    protected TipAwareAuto(PoseFactory alliance, Start startSpot) {
+    protected TipAwareAuto(PoseFactory alliance, Start startSpot, Routine routine) {
         this.alliance = alliance;
         this.red = alliance == AllianceAuto.RED;
         this.startSpot = startSpot;
+        this.routine = routine;
     }
 
     @Override
@@ -162,6 +180,7 @@ public abstract class TipAwareAuto extends LinearOpMode {
         intakeServoLeft = hardwareMap.get(CRServo.class, iamyou.INTAKE_SERVO_LEFT_NAME);
         intakeServoRight = hardwareMap.get(CRServo.class, iamyou.INTAKE_SERVO_RIGHT_NAME);
         flywheel.setDirection(direction(iamyou.OUTTAKE_REVERSED));
+        shootCommand.configure(flywheel);
         staging.setDirection(direction(iamyou.STAGING_REVERSED));
         intake.setDirection(direction(iamyou.INTAKE_REVERSED));
 
@@ -214,6 +233,18 @@ public abstract class TipAwareAuto extends LinearOpMode {
             mark("driving round to the " + sideName(raisedFront));
             driveToOtherSide();
         }
+        if (routine == Routine.PRELOAD_AND_PARK) {
+            if (startSpot == Start.REAR) {
+                long wait = (long) PRELOAD_RIGHT_DELAY_MS - (AUTO_MS - remainingMs());
+                if (wait > 0) {
+                    mark("waiting until 15 s");
+                    run(waitMs(wait));
+                }
+            }
+            lookAndShoot("shooting the pre-loads");
+            park();
+            return;
+        }
         if (!lookAndShoot("shooting the pre-loads")) {
             park();
             return;
@@ -241,9 +272,9 @@ public abstract class TipAwareAuto extends LinearOpMode {
      */
     private boolean lookAndShoot(String label) {
         for (int switched = 0; ; switched++) {
-            // Stand still where the drive left it: the look and the shot are both from here, and
-            // this robot cannot shoot on the move.
-            follower.hold(follower.pose());
+            // A drive can end a few inches short of its spot, and this robot cannot shoot on the
+            // move: settle on it first.
+            run(AllianceAuto.settleAt(follower, wallShot()));
             RaisedCellWatch.Reading reading = recheck();
             boolean facing = reading == RaisedCellWatch.Reading.FACING
                     || reading == RaisedCellWatch.Reading.NO_CAMERA;
@@ -306,7 +337,8 @@ public abstract class TipAwareAuto extends LinearOpMode {
         drive(Paths.curve(here, alliance.of(56, 30, 0), alliance.of(34, 26, 0), gardenEntry)
                 .linear(here, gardenEntry));
         run(startIntake(intake, intakeServoLeft, intakeServoRight));
-        drive(Paths.line(gardenEntry, gardenEnd).constant(gardenEntry));
+        drive(Paths.line(gardenEntry, gardenEnd).constant(gardenEntry),
+                AllianceAuto.SWEEP_TIMEOUT_MS);
         run(stopIntake(intake, intakeServoLeft, intakeServoRight));
 
         mark("returning to shoot");
@@ -362,14 +394,15 @@ public abstract class TipAwareAuto extends LinearOpMode {
 
     private void park() {
         mark("parking in the LOADING ZONE");
-        Pose park = pose(alliance, PARK);
+        Pose park = pose(alliance, AllianceAuto.PARK_APPROACH);
         if (atFront) {
             drive(Paths.curve(here, alliance.of(30, 30, 0), alliance.of(20, 90, 0), park)
-                    .linear(here, park));
+                    .constant(here), AllianceAuto.PARK_TIMEOUT_MS);
         } else {
             drive(Paths.curve(here, alliance.of(62, 120, 0), alliance.of(30, 112, 0), park)
-                    .linear(here, park));
+                    .constant(here), AllianceAuto.PARK_TIMEOUT_MS);
         }
+        run(AllianceAuto.turnTo(follower, pose(alliance, PARK)));
     }
 
     /** Straight off the rear wall first, so the turn happens away from it and the FLOWER. */
@@ -384,6 +417,11 @@ public abstract class TipAwareAuto extends LinearOpMode {
     private void arrive(boolean front, Pose spot) {
         atFront = front;
         here = spot;
+    }
+
+    /** Pressed against the wall behind the side the robot is on. */
+    private Pose wallShot() {
+        return pose(alliance, atFront ? FRONT_WALL_SHOT : REAR_WALL_SHOT);
     }
 
     /** Follows a path to its end, or for {@link AllianceAuto#PATH_TIMEOUT_MS}. */
@@ -404,6 +442,7 @@ public abstract class TipAwareAuto extends LinearOpMode {
             follower.update();
             Scheduler.execute();
             report();
+            idle();
         }
     }
 

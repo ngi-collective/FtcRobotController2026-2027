@@ -375,21 +375,26 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit — 
   at 1.5 and 142.5 (the field is 141 in). Left starts on the audience wall facing the raised CELL;
   Right starts on the rear wall behind the lowered one and drives round the HIVE frame first.
   Then all four shoot the pre-loads, drive forward along their GARDEN's line facing the alliance
-  wall, run the intake against their alliance-wall FLOWER's retrieval opening for 1.5 s, shoot
-  again and PARK in the LOADING ZONE. Nothing else is collected from, the other half is out of
+  wall with the intake on, shoot again and PARK in the LOADING ZONE: one collection per shot, and
+  the FLOWER trip that would come next does not fit in 30 s. Every shot first settles on its
+  spot pressed against the wall (within 0.75 in for 0.25 s, up to 1.5 s), then spins the flywheel
+  up for at least 0.5 s before staging feeds for 3 s (`shootCommand`). The `…AutoTimelineTest`
+  classes check every one of them for order,
+  spin-up, standing still, parking and time. Nothing else is collected from, the other half is out of
   bounds, and every path keeps the whole chassis, turns included, clear of the rear-wall FLOWER
   and the frame's foot bar. Each path gives up after 5 s, so a robot held short by a wall still
   reaches the end, and the OpMode **ends itself** when the routine does. This is unlike
   `SweepAndShootAuto`, so the dashboard resets the balls at that moment. The dashboard keeps the
   robot where the last run left it, so drag it to the `dashboard` line of INIT telemetry (metres)
-  before every run, and load `match-setup`. Placed there, Left finishes in 23.5 s and Right in
-  27.6 s, which leaves 2.4 s of a 30 s AUTO. The sim cannot score them, because `Outtake`,
+  before every run, and load `match-setup`. Placed there, Left finishes in about 19 s and Right in
+  about 27 s. The sim cannot score them, because `Outtake`,
   `IntakeM` and `IntakeSL/SR` are not the launcher and intake `verity.json` models.
   The four `… Preload` AUTOs are the same class with `Routine.PRELOAD_AND_PARK`: they shoot the
   pre-loads from where they were set down and PARK, Left at once (8 s) and Right after a 15 s wait
   (22 s). Right shoots from the rear wall, at the lowered CELL.
   The four `… Tip-Aware` AUTOs (`TipAwareAuto`) read through INIT which side their HIVE's raised
-  CELL faces and shoot from that side; see CLAUDE.md and
+  CELL faces and shoot from that side, and the four `… Tip-Aware Preload` AUTOs do the same with
+  the pre-loads only; see CLAUDE.md and
   `docs/adr/0007-the-camera-looks-forward-and-up.md`. `tipped-match-setup` is `match-setup` with
   both HIVEs tipped.
 

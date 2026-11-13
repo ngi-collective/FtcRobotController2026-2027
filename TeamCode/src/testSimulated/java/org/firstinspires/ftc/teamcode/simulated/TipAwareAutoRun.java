@@ -5,12 +5,7 @@ import static org.junit.Assert.assertTrue;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 
-import org.firstinspires.ftc.teamcode.pedroPathing.BlueLeftTipAware;
-import org.firstinspires.ftc.teamcode.pedroPathing.BlueRightTipAware;
-import org.firstinspires.ftc.teamcode.pedroPathing.RedLeftTipAware;
-import org.firstinspires.ftc.teamcode.pedroPathing.RedRightTipAware;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.firstinspires.ftc.teamcode.AutoTimeline;
 import org.ngicollective.ftcsim.app.PlainJvmVision;
 import org.ngicollective.ftcsim.camera.SimulatedScene;
 import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
@@ -25,94 +20,71 @@ import org.ngicollective.ftcsim.sim.FieldConfig;
 import org.ngicollective.ftcsim.sim.Pose2d;
 import org.ngicollective.ftcsim.sim.RobotConfig;
 import org.ngicollective.ftcsim.sim.SimConfigFiles;
-import org.robolectric.RobolectricTestRunner;
-import org.robolectric.annotation.Config;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * That the tip-aware AUTOs read which way their HIVE faces and shoot from that side.
+ * Runs one tip-aware AUTO and checks why and where it first shot, then {@link AutoTimeline}'s rules.
  *
- * <p>Each of the four starts, once on the match-start field and once with both HIVEs tipped
- * ({@code tipped-match-setup}). Real detector on rendered frames, real chassis and flywheel. The
- * assertions are why and where the robot stood when it first shot, which is the decision, and
- * that it parked inside the 30&nbsp;s AUTO.</p>
+ * <p>Real detector on rendered frames, real chassis and flywheel, paced against the wall clock.
+ * Called from Robolectric test classes, two runs to a class, so Gradle's parallel forks can run
+ * them side by side; each class gets its own sandbox and so its own LiveView.</p>
  */
-@RunWith(RobolectricTestRunner.class)
-@Config(sdk = 28)
-public class TipAwareAutoAcceptanceTest {
+final class TipAwareAutoRun {
 
     private static final double TICK_SECONDS = 0.02;
     private static final double METRES_PER_INCH = 0.0254;
 
     // Start squares in the field frame, from AllianceAuto's Pedro poses (pedro = field + 72 in).
-    private static final Pose2d RED_FRONT = pedro(56.0, 9.5, 90.0);
-    private static final Pose2d RED_REAR = pedro(62.0, 134.5, 270.0);
-    private static final Pose2d BLUE_FRONT = pedro(88.0, 134.5, 270.0);
-    private static final Pose2d BLUE_REAR = pedro(82.0, 9.5, 90.0);
+    static final Pose2d RED_FRONT = pedro(56.0, 9.5, 90.0);
+    static final Pose2d RED_REAR = pedro(62.0, 134.5, 270.0);
+    static final Pose2d BLUE_FRONT = pedro(88.0, 134.5, 270.0);
+    static final Pose2d BLUE_REAR = pedro(82.0, 9.5, 90.0);
 
     // Where each shoots from: the start it is on, or the other side's spot.
-    private static final Pose2d RED_SHOOT = pedro(56.0, 10.5, 90.0);
-    private static final Pose2d BLUE_SHOOT = pedro(88.0, 133.5, 270.0);
+    static final Pose2d RED_SHOOT = pedro(56.0, 10.5, 90.0);
+    static final Pose2d BLUE_SHOOT = pedro(88.0, 133.5, 270.0);
 
     /** How far from its shooting spot, in metres, the robot may be when it shoots. */
     private static final double SPOT_TOLERANCE = 0.08;
 
-    @Test
-    public void redLeftShootsFromTheAudienceSideWhenTheHiveIsUntipped() throws Exception {
-        assertShootsFrom(new RedLeftTipAware(), RED_FRONT, "match-setup", true, "audience side",
-                RED_FRONT);
+    /**
+     * The simulated camera's frame rate in these runs, against the 30 the robot's file says.
+     *
+     * <p>Frames are drawn in software, on the same CPU the OpMode's follower loop and the other
+     * parallel test forks need, and at 30 a second that starved them: parks stalled half-way and
+     * routines overran 30 s. The decision does not need them. {@code RaisedCellWatch} judges over
+     * a half-second window, which still holds five frames.</p>
+     */
+    private static final double CAMERA_FRAMES_PER_SECOND = 10.0;
+
+    private TipAwareAutoRun() {
     }
 
-    @Test
-    public void redLeftDrivesRoundToTheRearWhenTheHiveIsTipped() throws Exception {
-        assertShootsFrom(new RedLeftTipAware(), RED_FRONT, "tipped-match-setup", true,
-                "rear side", RED_REAR);
+    /** {@code verity.json} with the camera at {@link #CAMERA_FRAMES_PER_SECOND}. */
+    private static RobotConfig verity() throws Exception {
+        Path original = SimConfigFiles.directory().resolve("verity.json");
+        String json = new String(Files.readAllBytes(original), StandardCharsets.UTF_8);
+        String slower = json.replaceFirst("\"framesPerSecond\"\\s*:\\s*[0-9.]+",
+                "\"framesPerSecond\": " + CAMERA_FRAMES_PER_SECOND);
+        if (slower.equals(json)) {
+            throw new IllegalStateException("no camera framesPerSecond in " + original);
+        }
+        Path directory = Files.createTempDirectory("tip-aware-robot");
+        Files.write(directory.resolve("verity.json"), slower.getBytes(StandardCharsets.UTF_8));
+        return SimConfigFiles.robot(directory, "verity");
     }
 
-    @Test
-    public void redRightDrivesRoundToTheAudienceSideWhenTheHiveIsUntipped() throws Exception {
-        assertShootsFrom(new RedRightTipAware(), RED_REAR, "match-setup", true, "audience side",
-                RED_SHOOT);
-    }
-
-    @Test
-    public void redRightShootsFromTheRearWhenTheHiveIsTipped() throws Exception {
-        assertShootsFrom(new RedRightTipAware(), RED_REAR, "tipped-match-setup", true,
-                "rear side", RED_REAR);
-    }
-
-    @Test
-    public void blueLeftShootsFromTheRearWhenTheHiveIsUntipped() throws Exception {
-        assertShootsFrom(new BlueLeftTipAware(), BLUE_FRONT, "match-setup", false, "rear side",
-                BLUE_FRONT);
-    }
-
-    @Test
-    public void blueLeftDrivesRoundToTheAudienceSideWhenTheHiveIsTipped() throws Exception {
-        assertShootsFrom(new BlueLeftTipAware(), BLUE_FRONT, "tipped-match-setup", false,
-                "audience side", BLUE_REAR);
-    }
-
-    @Test
-    public void blueRightDrivesRoundToTheRearWhenTheHiveIsUntipped() throws Exception {
-        assertShootsFrom(new BlueRightTipAware(), BLUE_REAR, "match-setup", false, "rear side",
-                BLUE_SHOOT);
-    }
-
-    @Test
-    public void blueRightShootsFromTheAudienceSideWhenTheHiveIsTipped() throws Exception {
-        assertShootsFrom(new BlueRightTipAware(), BLUE_REAR, "tipped-match-setup", false,
-                "audience side", BLUE_REAR);
-    }
-
-    private static void assertShootsFrom(LinearOpMode auto, Pose2d start, String scenarioName,
+    static void assertShootsFrom(LinearOpMode auto, Pose2d start, String scenarioName,
                                          boolean red, String side, Pose2d spot)
             throws Exception {
         PlainJvmVision.start();
 
-        RobotConfig config = SimConfigFiles.robot("verity");
+        RobotConfig config = verity();
         BioBuzzScenario scenario = BioBuzzScenario.named(scenarioName);
         SimulatedScene scene = scenario.scene();
         FakeHardwareMap hardware = new VerityRobot(config, FieldConfig.standard(), scene).create();
@@ -129,13 +101,16 @@ public class TipAwareAutoAcceptanceTest {
         Pose2d firstShotPose = null;
         boolean done = false;
         double doneAtSeconds = Double.NaN;
+        AutoTimeline mechanisms = null;
         try {
             // A second and a half of INIT, for the camera to open and look.
             advance(harness, 1.5, timeline);
             harness.pressStart();
+            mechanisms = new AutoTimeline(hardware);
             for (int tick = 0; tick < 40.0 / TICK_SECONDS && !done; tick++) {
                 List<String> frame = step(harness, timeline);
                 String now = value(frame, "step");
+                mechanisms.sample(now == null ? "" : now);
                 if (firstShotStep == null && now != null && now.startsWith("shooting")) {
                     firstShotStep = value(frame, "camera");
                     firstShotPose = hardware.drive().pose();
@@ -161,28 +136,13 @@ public class TipAwareAutoAcceptanceTest {
                 Math.hypot(firstShotPose.x() - spot.x(), firstShotPose.y() - spot.y()),
                 SPOT_TOLERANCE);
 
-        assertOneCollectionPerShot(timeline);
-        assertTrue("it should have parked inside the 30 s AUTO; it went " + timeline,
-                doneAtSeconds <= 30.0);
+        System.out.println("  " + mechanisms.timeline());
+        mechanisms.assertKeptTheRules(auto.getClass().getSimpleName() + " on " + scenarioName,
+                doneAtSeconds, red);
         // Points are printed, not asserted: the simulated robot has no pre-loads and no staging,
         // and its intake does not reach the GARDEN's line of POLLEN, so this routine has nothing
         // to score in the sim. Where it stood to shoot is the decision under test.
         System.out.println("  points " + before + " -> " + points(scenario, world, red));
-    }
-
-    /** Every trip to the GARDEN or the FLOWER is followed by a shot before the next trip. */
-    private static void assertOneCollectionPerShot(List<String> timeline) {
-        boolean carrying = false;
-        for (String line : timeline) {
-            boolean collecting = line.startsWith("sweeping") || line.startsWith("collecting");
-            assertTrue("it went collecting twice without shooting in between: " + timeline,
-                    !(collecting && carrying));
-            if (collecting) {
-                carrying = true;
-            } else if (line.startsWith("shooting")) {
-                carrying = false;
-            }
-        }
     }
 
     /** "12.3 s" to 12.3. */

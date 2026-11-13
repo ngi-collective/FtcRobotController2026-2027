@@ -24,10 +24,6 @@ import org.firstinspires.ftc.teamcode.pedroPathing.procedures.*;
  * <p>Units are inches and radians, Pedro's defaults.</p>
  */
 public class Constants {
-    @Tuner
-    public static Procedure foresightTuner() {
-        return new ForesightTuner((hardwareMap) -> new PinpointLocalizer(hardwareMap, Constants.localizerConfig), (hardwareMap) -> new Mecanum(hardwareMap, Constants.drivetrainConfig));
-    }
     public static MecanumConfig drivetrainConfig = new MecanumConfig(c -> {
         c.frontLeftName.set("FL");
         c.frontRightName.set("FR");

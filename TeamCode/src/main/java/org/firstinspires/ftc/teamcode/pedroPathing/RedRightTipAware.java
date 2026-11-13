@@ -6,6 +6,6 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 @Autonomous(name = "RedRight Tip-Aware", group = "Autonomous")
 public class RedRightTipAware extends TipAwareAuto {
     public RedRightTipAware() {
-        super(AllianceAuto.RED, Start.REAR);
+        super(AllianceAuto.RED, Start.REAR, Routine.FULL);
     }
 }

@@ -39,3 +39,17 @@ ftcSim {
 dependencies {
     implementation project(':FtcRobotController')
 }
+
+// The AUTO tests run in real time, because the OpModes time their shots and waits by the wall
+// clock, so most of a test run is waiting. Four JVMs run four test classes at once; the AUTO tests
+// are split two to a class for that reason. That is all an 8-core machine holds: in the sim an
+// OpMode loop never waits on hardware and spins a core, so more forks starve the real-time runs,
+// and the symptom is parks stalling and routines overrunning 30 s, failures that look like bugs.
+tasks.withType(Test).configureEach {
+    maxParallelForks = 4
+    // A fresh JVM per test class. VisionPortal counts portals per process and the SDK keeps
+    // static camera state, so a portal left by one class (a tip-aware AUTO stopped mid-run)
+    // failed whichever vision class its fork ran next: "multiple vision portals", or a range
+    // read off the wrong camera. Which classes shared a fork changed run to run.
+    forkEvery = 1
+}
