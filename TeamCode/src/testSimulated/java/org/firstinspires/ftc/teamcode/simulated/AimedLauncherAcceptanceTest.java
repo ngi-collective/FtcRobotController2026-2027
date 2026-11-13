@@ -144,7 +144,7 @@ public class AimedLauncherAcceptanceTest {
 
         // What the camera worked out, against what the scene was built from. This is the whole
         // chain in one assertion: the renderer's geometry, the detector's solve, the camera's
-        // 35-degree tilt taken back out, and the muzzle's own reach ahead of the chassis.
+        // mount's rotation taken back out, and the muzzle's own reach ahead of the chassis.
         Matcher range = find(aimed, RANGE);
         double reportedDistance = Double.parseDouble(range.group(1));
         double reportedHeight = Double.parseDouble(range.group(2));

@@ -23,7 +23,7 @@ Three things make it harder than it sounds.
 **The SDK's convenient fields are measured in the camera's own frame.** `ftcPose.range` is
 `hypot(x, y)` — the distance in the plane of the image, with the vertical component dropped —
 and `bearing` and `elevation` are angles about the camera's own axes. This robot's camera aims up
-by 35°, because BioBuzz puts its tags on the undersides of things four feet in the air. So every
+by 45° (ADR 0007), because BioBuzz puts its tags on the undersides of things four feet in the air. So every
 one of those fields is wrong about the field by an amount that looks entirely plausible.
 
 **`robotPose` is not available this season.** The SDK's own BioBuzz library declares all four

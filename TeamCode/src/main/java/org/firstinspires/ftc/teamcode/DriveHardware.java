@@ -4,6 +4,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 
 /**
  * Single source of truth for the mecanum drivetrain's hardware-map names and
@@ -61,10 +62,11 @@ public class DriveHardware {
         DcMotorEx bl = hardwareMap.get(DcMotorEx.class, BL_NAME);
         DcMotorEx br = hardwareMap.get(DcMotorEx.class, BR_NAME);
 
-        fl.setDirection(DcMotorSimple.Direction.REVERSE);
-        bl.setDirection(DcMotorSimple.Direction.REVERSE);
-        fr.setDirection(DcMotorSimple.Direction.FORWARD);
-        br.setDirection(DcMotorSimple.Direction.FORWARD);
+        // The right-side motors are the mirrored ones, as in pedroPathing's Constants.
+        fl.setDirection(DcMotor.Direction.FORWARD);
+        bl.setDirection(DcMotor.Direction.FORWARD);
+        fr.setDirection(DcMotor.Direction.REVERSE);
+        br.setDirection(DcMotor.Direction.REVERSE);
 
         return new DriveHardware(fl, fr, bl, br);
     }

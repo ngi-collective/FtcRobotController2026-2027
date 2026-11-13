@@ -35,13 +35,13 @@ class SimulatedCameraWiringTest {
 
     @Test
     void theConfiguredCameraSeesTheTagsAboveIt() {
-        FakeHardwareMap hardware = robotLookingAt("hives-tipped-back");
+        FakeHardwareMap hardware = robotLookingAt("aimed-shot");
         FakeWebcam webcam = hardware.webcam("Webcam 1");
         assertNotNull(webcam.frameSource());
 
-        // Under the red HIVE, facing across the field; verity.json pitches the camera up 35
-        // degrees, which is what lets it see plates hanging 3 to 4 feet up.
-        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(90.0)));
+        // About 0.9 m short of the red HIVE's raised CELL, facing it; verity.json tilts the
+        // camera 45 degrees up, which frames plates hanging 4 feet up from here.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(90.0)));
 
         SyntheticFrame frame = new SyntheticFrame(640, 480);
         webcam.frameSource().render(frame);
@@ -52,10 +52,9 @@ class SimulatedCameraWiringTest {
 
     @Test
     void aScenariosBallsAreWhereABallCameraCouldSeeThem() {
-        // Not through verity's camera, and that is the point. Its mount pitches up 35 degrees to
-        // reach plates hanging 35 to 50 inches up; balls on the floor sit a few degrees *below*
-        // the horizon. Covering both would need about 80 degrees of vertical view and a 640x480
-        // frame through this lens has 46, so one camera cannot do both jobs on this field. This
+        // Not through verity's camera, and that is the point. Its mount looks 45 degrees up at
+        // plates hanging 35 to 50 inches up; balls on the floor sit a few degrees *below* the
+        // horizon, so one camera cannot do both jobs on this field. This
         // checks the scenario's ball positions against the camera that would hunt them.
         SimulatedCamera ballCamera = new SimulatedCamera("Ball Cam",
                 CameraIntrinsics.approximate(640, 480),
@@ -95,15 +94,15 @@ class SimulatedCameraWiringTest {
     void drivingChangesWhatTheCameraSees() {
         // The camera is bolted to the robot, so the view has to follow it. A frame source that
         // captured the pose once would pass every other test in this file.
-        FakeHardwareMap hardware = robotLookingAt("hives-tipped-back");
+        FakeHardwareMap hardware = robotLookingAt("aimed-shot");
         SyntheticFrame frame = new SyntheticFrame(640, 480);
 
-        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(90.0)));
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(90.0)));
         hardware.webcam("Webcam 1").frameSource().render(frame);
         double facingTheTags = darkFraction(frame);
 
-        // Same spot, nose at the far wall: the HIVE is now behind the robot.
-        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(-90.0)));
+        // Same spot, nose at the far wall: the camera looks away from the CELL.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(-90.0)));
         hardware.webcam("Webcam 1").frameSource().render(frame);
         double facingAway = darkFraction(frame);
 

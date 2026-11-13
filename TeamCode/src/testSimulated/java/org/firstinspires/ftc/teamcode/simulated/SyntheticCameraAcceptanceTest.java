@@ -5,7 +5,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
-import org.firstinspires.ftc.teamcode.ConceptAprilTagEasy;
+import org.firstinspires.ftc.robotcontroller.external.samples.ConceptAprilTagEasy;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -73,9 +73,9 @@ public class SyntheticCameraAcceptanceTest {
         assertNotNull("the simulated robot should declare Webcam 1",
                 hardware.tryGet(WebcamName.class, "Webcam 1"));
 
-        // Beneath the red HIVE, facing across the field so the up-pitched camera looks into the
-        // tags on the underside of the raised CELL.
-        hardware.drive().setPose(new Pose2d(-0.324, -0.85, Math.toRadians(90.0)));
+        // About 0.9 m short of the red HIVE's raised CELL, so the forward camera, tilted 45
+        // degrees up, looks into the tags hanging under it.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(90.0)));
 
         // Verbatim stock sample: it builds its own VisionPortal from hardwareMap.get(...) and
         // nothing in it knows this framework exists.

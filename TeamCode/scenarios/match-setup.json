@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "name": "Match setup: NECTAR in the raised CELLs and four POLLEN in each GARDEN",
+
+  "elements": {
+    "red-nectar-1": { "kind": "RED_NECTAR", "cell": "RED AUDIENCE" },
+    "red-nectar-2": { "kind": "RED_NECTAR", "cell": "RED AUDIENCE" },
+    "red-nectar-3": { "kind": "RED_NECTAR", "cell": "RED AUDIENCE" },
+
+    "blue-nectar-1": { "kind": "BLUE_NECTAR", "cell": "BLUE SCORING" },
+    "blue-nectar-2": { "kind": "BLUE_NECTAR", "cell": "BLUE SCORING" },
+    "blue-nectar-3": { "kind": "BLUE_NECTAR", "cell": "BLUE SCORING" },
+
+    "red-garden-1": { "kind": "POLLEN", "xMetres": -1.7551, "yMetres": -1.7551 },
+    "red-garden-2": { "kind": "POLLEN", "xMetres": -1.6840, "yMetres": -1.7551 },
+    "red-garden-3": { "kind": "POLLEN", "xMetres": -1.6129, "yMetres": -1.7551 },
+    "red-garden-4": { "kind": "POLLEN", "xMetres": -1.5418, "yMetres": -1.7551 },
+
+    "blue-garden-1": { "kind": "POLLEN", "xMetres": 1.7551, "yMetres": 1.7551 },
+    "blue-garden-2": { "kind": "POLLEN", "xMetres": 1.6840, "yMetres": 1.7551 },
+    "blue-garden-3": { "kind": "POLLEN", "xMetres": 1.6129, "yMetres": 1.7551 },
+    "blue-garden-4": { "kind": "POLLEN", "xMetres": 1.5418, "yMetres": 1.7551 }
+  }
+}
