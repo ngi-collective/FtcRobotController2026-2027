@@ -58,7 +58,7 @@ public class LauncherTeleOp extends LinearOpMode {
         // A shooter is commanded by speed, not by power: a tiring battery that drops a
         // power-commanded wheel by 200 rev/min drops every shot short with it, and the controller
         // can hold the speed instead if it is told to.
-        flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        shootCommand.configure(flywheel);
         flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
         CRServo intake = hardwareMap.get(CRServo.class, "intake");

@@ -21,7 +21,7 @@ import java.util.Set;
 public class shootCommand implements Command {
 
     /** Flywheel target, encoder ticks per second. */
-    public static final double TARGET_TICKS_PER_SECOND = 1200.0;
+    public static final double TARGET_TICKS_PER_SECOND = 1350;
 
     /** Up to speed at this fraction of the target. */
     public static final double READY_FRACTION = 0.9;
@@ -36,22 +36,27 @@ public class shootCommand implements Command {
     public static final long FEED_MS = 3000;
 
     /**
-     * The hub's velocity loop gains, set explicitly rather than trusted to be there.
+     * The hub's velocity loop gains, written on every INIT because the hub keeps whatever was
+     * last set until it loses power.
      *
-     * <p>These are the REV hub's own defaults for {@code RUN_USING_ENCODER}. They are written on
-     * every AUTO's INIT because the hub keeps whatever was last set until it loses power, and
-     * {@code FlywheelPIDFTuning} starts by setting P and F to zero: an AUTO run after it would
-     * otherwise command 1200 ticks/s through a loop that does nothing. Replace them with the
-     * tuner's numbers once it has produced some.</p>
+     * <p>Tuned from P=50, F=3, which overshot the first balls and undershot the later ones. F is
+     * the feedforward and was far too low: the 6000 rpm motor's free speed is about 2800 ticks/s,
+     * so holding a speed on its own wants F ≈ 32767 / 2800 ≈ 11.7, and the loaded wheel tuned in
+     * {@code iamyou} ({@code FLYWHEEL_KV}, {@code FLYWHEEL_KS}) works out to about 11. With F=3 the
+     * P term had to supply most of the power, which only happens with a large error: P=50 shot
+     * the wheel past the target on spin-up (early balls long), then once balls started taking
+     * energy out it could only hold the wheel well below the target (later balls short). With F
+     * carrying the speed, P only has to recover each ball's dip, and 15 does that without
+     * overshooting.</p>
      */
-    public static final PIDFCoefficients VELOCITY_PIDF = new PIDFCoefficients(10.0, 3.0, 0.0, 0.0);
+    public static final PIDFCoefficients VELOCITY_PIDF = new PIDFCoefficients(15.0, 0.0, 0.0, 11.0);
 
     /**
      * Puts the flywheel in the hub's closed-loop velocity mode with {@link #VELOCITY_PIDF}.
      *
-     * <p>{@code setVelocity} is only a speed in {@code RUN_USING_ENCODER}; the TeleOp drives the
-     * same motor open loop in {@code RUN_WITHOUT_ENCODER}, and the hub keeps that mode into an
-     * AUTO run straight after it. Call once at INIT, after the direction is set.</p>
+     * <p>{@code setVelocity} is only a speed in {@code RUN_USING_ENCODER}; {@code iamyou} puts the
+     * motor in {@code RUN_WITHOUT_ENCODER} whenever its flywheel is off, so it coasts, and the hub
+     * keeps that mode into an AUTO run straight after it. Call once at INIT, after the direction is set.</p>
      */
     public static void configure(DcMotorEx flywheel) {
         flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);

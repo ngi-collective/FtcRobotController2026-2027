@@ -154,12 +154,12 @@ public class IamYouHeadlessTest {
         // About 0.9 m short of red's raised CELL and fifteen degrees clockwise of it, well inside the 0.46-2 m band
         // the forward, 45-degree camera frames the cluster in.
         hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(75.0)));
-        // Flywheel on, and X to turn the aimer on: both toggles, so press and let go.
-        harness.gamepad1().left_bumper = true;
+        // Flywheel on (gamepad 2, the operator's), and X on gamepad 1 to turn the aimer on: both toggles, so press and let go.
+        harness.gamepad2().left_bumper = true;
         setX(true);
         for (int tick = 0; tick < 500 && !aimSettled(); tick++) {
             if (tick == 5) {
-                harness.gamepad1().left_bumper = false;
+                harness.gamepad2().left_bumper = false;
                 setX(false);
             }
             harness.advance(TICK);
@@ -214,18 +214,18 @@ public class IamYouHeadlessTest {
     }
 
     @Test
-    public void triggerRunsTheIntakeInAndBumperEjects() {
+    public void operatorTriggerRunsTheIntakeInAndBumperEjects() {
         launchAndStart();
 
-        harness.gamepad1().right_trigger = 1.0f;
+        harness.gamepad2().right_trigger = 1.0f;
         awaitIntakePower(iamyou.INTAKE_POWER);
 
         // Eject wins over a held trigger.
-        harness.gamepad1().right_bumper = true;
+        harness.gamepad2().right_bumper = true;
         awaitIntakePower(-iamyou.EJECT_POWER);
 
-        harness.gamepad1().right_bumper = false;
-        harness.gamepad1().right_trigger = 0.0f;
+        harness.gamepad2().right_bumper = false;
+        harness.gamepad2().right_trigger = 0.0f;
         awaitIntakePower(0.0);
     }
 
@@ -233,7 +233,7 @@ public class IamYouHeadlessTest {
     public void stoppingCutsPowerToEveryWheelAndTheIntake() {
         launchAndStart();
         harness.gamepad1().left_stick_y = -1.0f;
-        harness.gamepad1().right_trigger = 1.0f;
+        harness.gamepad2().right_trigger = 1.0f;
         awaitSteadyWheelPowers();
         awaitIntakePower(iamyou.INTAKE_POWER);
 
@@ -292,8 +292,7 @@ public class IamYouHeadlessTest {
             }
             // Positive right stick turns clockwise, which is a falling heading.
             harness.gamepad1().right_stick_x = (float) (error > 0 ? -0.4 : 0.4);
-            harness.advance(TICK);
-            harness.eventLoopIteration();
+            step();
         }
         release();
     }
@@ -305,8 +304,25 @@ public class IamYouHeadlessTest {
         harness.gamepad1().right_stick_x = 0.0f;
         harness.gamepad1().left_trigger = 0.0f;
         for (int tick = 0; tick < 25; tick++) {
-            harness.advance(TICK);
-            harness.eventLoopIteration();
+            step();
+        }
+    }
+
+    /**
+     * One tick of world time, then a tick of wall time for the OpMode to see it.
+     *
+     * <p>The OpMode reads its sensors and steers on its own thread. Stepping the world without waiting let it run
+     * ahead of the OpMode on a loaded machine: the robot kept turning after the OpMode's last heading read, or drove
+     * on commands mixed for a heading it had already left, and field-centric drifted ten degrees off line.</p>
+     */
+    private void step() {
+        harness.advance(TICK);
+        harness.eventLoopIteration();
+        try {
+            Thread.sleep((long) (TICK * 1000.0));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("interrupted while stepping", e);
         }
     }
 
@@ -341,8 +357,7 @@ public class IamYouHeadlessTest {
 
         Pose2d start = hardware.drive().pose();
         for (int tick = 0; tick < Math.round(seconds / TICK); tick++) {
-            harness.advance(TICK);
-            harness.eventLoopIteration();
+            step();
         }
         Pose2d end = hardware.drive().pose();
         return new Pose2d(end.x() - start.x(), end.y() - start.y(), end.heading() - start.heading());

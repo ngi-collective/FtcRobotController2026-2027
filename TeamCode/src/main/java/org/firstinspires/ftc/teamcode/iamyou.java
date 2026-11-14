@@ -11,7 +11,6 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.robotcore.hardware.VoltageSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -65,7 +64,7 @@ import java.util.List;
  *   X / B ............... alliance: X = BLUE, B = RED. Aiming stays off until one is picked.
  *   Each intake servo's direction for intake and for outtake is set separately (LEFT_SERVO_* / RIGHT_SERVO_*).
  */
-@TeleOp(name = "I AM YOU (1 controller)")
+@TeleOp(name = "I AM YOU (2 controllers)")
 public class iamyou extends LinearOpMode {
 
     // ---- Hardware names ----
@@ -138,7 +137,7 @@ public class iamyou extends LinearOpMode {
 
     /** True = gamepad 2 runs the intake and outtake while gamepad 1 only drives. */
     protected boolean twoControllers() {
-        return false;
+        return true;
     }
     boolean toggleAprilTagAdjust = false;
 
@@ -255,16 +254,14 @@ public class iamyou extends LinearOpMode {
         // ================= FLYWHEEL (OUTTAKE MOTOR) =================
         DcMotorEx outtake = hardwareMap.get(DcMotorEx.class, OUTTAKE_NAME);
         outtake.setDirection(OUTTAKE_REVERSED ? DcMotorSimple.Direction.REVERSE : DcMotorSimple.Direction.FORWARD);
-        // Plain power mode: the velocity PIDF runs here (Outtake / FlywheelPIDF), reading the encoder each loop.
+        // Velocity mode with the hub's own PIDF (shootCommand.VELOCITY_PIDF) holds the speed while ON. While OFF the
+        // motor is put back in plain power mode, so the wheel coasts down instead of being braked to zero.
+        shootCommand.configure(outtake);
         outtake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        boolean flywheelVelocityMode = false;
         // Coast to a stop: braking a spinning flywheel hard is a shock load on the motor and gears.
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
-        // Battery voltage, so the flywheel's feedforward gives the same speed on a full or a tired battery.
-        VoltageSensor battery = hardwareMap.voltageSensor.iterator().hasNext()
-                ? hardwareMap.voltageSensor.iterator().next() : null;
-        double batteryVolts = FLYWHEEL_NOMINAL_VOLTS;
-        double voltsReadAge = Double.MAX_VALUE;
         boolean wasReady = false;
 
         // ================= CAMERA =================
@@ -344,6 +341,8 @@ public class iamyou extends LinearOpMode {
 
             // Zero heading at the moment of start: the robot's current front is NORTH.
             headingTracker.zero();
+            // The Pinpoint's own heading count at the last zero, for the "pinpoint own" telemetry total.
+            double pinpointRawAtZero = pinpoint != null ? pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES) : 0.0;
 
             ElapsedTime loopTimer = new ElapsedTime();
             ElapsedTime currentTimer = new ElapsedTime();
@@ -372,6 +371,9 @@ public class iamyou extends LinearOpMode {
                 // Options button: re-zero so the robot's current front becomes NORTH. Once per press.
                 if (gamepad1.options && !lastOptions) {
                     headingTracker.zero();
+                    if (pinpoint != null) {
+                        pinpointRawAtZero = pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES);
+                    }
                 }
                 lastOptions = gamepad1.options;
 
@@ -392,6 +394,7 @@ public class iamyou extends LinearOpMode {
                         imu.resetYaw();
                     }
                     headingTracker.fullReset();
+                    pinpointRawAtZero = 0.0;
                     resetPending = false;
                     calibratingSeconds = 0.0;
                     calibrating = pinpoint != null;
@@ -536,18 +539,21 @@ public class iamyou extends LinearOpMode {
                 lastIntakePower = intakeResult.power;
 
                 // ---- Flywheel ----
-                // The voltage read is a separate hub command, not in the bulk read, so only a few times a second.
-                voltsReadAge += dt;
-                if (battery != null && voltsReadAge >= 0.25) {
-                    double v = battery.getVoltage();
-                    if (v > 7.0 && v < 16.0) {
-                        batteryVolts += (v - batteryVolts) * 0.5;
-                    }
-                    voltsReadAge = 0.0;
-                }
                 double flywheelTicksPerSec = outtake.getVelocity();
-                double outtakePower = outtakeLogic.update(mech.left_bumper, flywheelTicksPerSec, batteryVolts, dt);
-                outtake.setPower(outtakePower);
+                double flywheelTarget = outtakeLogic.update(mech.left_bumper, flywheelTicksPerSec, dt);
+                if (flywheelTarget > 0.0) {
+                    if (!flywheelVelocityMode) {
+                        outtake.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+                        flywheelVelocityMode = true;
+                    }
+                    outtake.setVelocity(flywheelTarget);
+                } else {
+                    if (flywheelVelocityMode) {
+                        outtake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+                        flywheelVelocityMode = false;
+                    }
+                    outtake.setPower(0.0);
+                }
                 boolean flywheelReady = outtakeLogic.isReady();
                 if (flywheelReady && !wasReady) {
                     mech.rumble(200);
@@ -558,10 +564,9 @@ public class iamyou extends LinearOpMode {
                 for (String line : shotIndicator(outtakeLogic.isOn(), flywheelReady, flywheelTicksPerSec)) {
                     telemetry.addLine(line);
                 }
-                telemetry.addData("Flywheel", "%s  %.0f / %.0f rpm  power %.2f",
+                telemetry.addData("Flywheel", "%s  %.0f / %.0f rpm",
                         !outtakeLogic.isOn() ? "OFF" : flywheelReady ? "READY" : "spinning up",
-                        ticksPerSecToRpm(flywheelTicksPerSec),
-                        outtakeLogic.isOn() ? ticksPerSecToRpm(FLYWHEEL_TARGET_TPS) : 0.0, outtakePower);
+                        ticksPerSecToRpm(flywheelTicksPerSec), ticksPerSecToRpm(flywheelTarget));
                 if (resetPending) {
                     telemetry.addLine("HEADING RESET: stop the robot to finish");
                 } else if (calibrating) {
@@ -580,7 +585,11 @@ public class iamyou extends LinearOpMode {
                 telemetry.addData("Driver Position", driverPosition + "  (D-pad)");
                 telemetry.addData("Sensors", headingTracker.sensorReport());
                 if (pinpoint != null) {
-                    telemetry.addData("Pinpoint", pinpoint.getDeviceStatus());
+                    // The Pinpoint's own turn count since the last zero, without PINPOINT_TURN_SCALE. If it matches
+                    // "main" divided by the scale, no turn was lost; if it is bigger, the tracker lost loops.
+                    // Meaningless after a Pinpoint restart (it counts from 0 again).
+                    telemetry.addData("Pinpoint", "%s  own %.1f", pinpoint.getDeviceStatus(),
+                            pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES) - pinpointRawAtZero);
                 }
                 if (!hasHeading) {
                     telemetry.addData("IMU", imuStatus);
@@ -597,7 +606,9 @@ public class iamyou extends LinearOpMode {
                     telemetry.addData("Drive Check", driveCheck.report());
                     telemetry.addData("Still Check", stillReport(wheels, gamepad1, still,
                             aimerMayTurn(aimer, outtakeLogic)));
-                    telemetry.addData("Flywheel PIDF", "%s  %.1f V", outtakeLogic.pidf.terms(), batteryVolts);
+                    telemetry.addData("Flywheel PIDF (hub)", "P %.1f  I %.1f  D %.1f  F %.1f",
+                            shootCommand.VELOCITY_PIDF.p, shootCommand.VELOCITY_PIDF.i,
+                            shootCommand.VELOCITY_PIDF.d, shootCommand.VELOCITY_PIDF.f);
                     telemetry.addData("Cmd Fwd | Right", "%.2f | %.2f", result.stickForward, result.stickRight);
                     telemetry.addData("Robot Fwd | Right", "%.2f | %.2f", result.robotForward, result.robotRight);
                 }
@@ -1227,6 +1238,11 @@ public class iamyou extends LinearOpMode {
     //    only another value (a velocity) was bad, so the next reading's change from the last one is exactly the turn
     //    made meanwhile and is counted. Treating it as a gap threw that turn away on every bad read, and the turn
     //    scale measured with the turns missing (4 % "under-read") then over-counted every turn the robot made.
+    //  - A blank read (firmware v3+: a failed I2C read arrives as zeros, so status NOT_READY and heading 0; the
+    //    driver's own check does not catch it) is a short gap, not a restart. When the next good reading continues
+    //    from the last one, the turn across the gap is counted (less whatever the backup already stood in for).
+    //    Taking it as a new baseline lost a loop's turn at every failed read, always in the direction of the turn,
+    //    so the heading fell further behind the robot with every turn and the drive slowly rotated wrong.
     //  - A loop where the Pinpoint is frozen (restarting or calibrating: it re-zeros) or turns faster than any robot
     //    can uses the Control Hub IMU's turn instead - once the
     //    IMU has been seen to turn the same way and by the same amount as the Pinpoint. A backup that turns the other
@@ -1260,11 +1276,13 @@ public class iamyou extends LinearOpMode {
      *  3. Read the Sensors line: "main" should say 3600 (or -3600), "backup" the same.
      *  4. Set the scale to 3600 / |reading|, e.g. main 3528 -> PINPOINT_TURN_SCALE = 3600 / 3528.0 = 1.0204.
      */
-    // 2026-11-08 measured 3453 for ten turns, but that run threw away the turn of every bad-read loop (see HEADING),
-    // so it measured the lost loops, not the gyro. The Pinpoint's gyro is calibrated at the factory: 1.0 until the
-    // spin test is redone with this code, with "glitches 0" on the Sensors line (any glitch spoils the run).
-    static final double PINPOINT_TURN_SCALE = 1.0;
-    static final double HUB_IMU_TURN_SCALE = 1.0;
+    // 2026-11-08: 3453 for ten turns (4.1 % short), with bad and blank reads still losing turn.
+    // 2026-11-13: twelve turns, blank reads bridged: main 4154.2 (3.8 % short), backup 4283.9 (0.8 % short) for 4320.
+    // The Pinpoint is short by the same amount both times, so it is its scale, not lost loops. (A gyro tilted 16
+    // degrees off level would also read 3.8 % short: check the INIT Level Check line with DEBUG_TELEMETRY.)
+    // The Sensors line's "pinpoint own" total tells the two apart: it is the Pinpoint's own count, unscaled.
+    static final double PINPOINT_TURN_SCALE = 4320.0 / 4154.2;
+    static final double HUB_IMU_TURN_SCALE = 4320.0 / 4283.9;
 
     /** A wheel slower than this (encoder ticks/sec) counts as stopped when deciding the robot is standing still. */
     static final double STILL_WHEEL_TICKS_PER_SEC = 15.0;
@@ -1292,6 +1310,13 @@ public class iamyou extends LinearOpMode {
      * allows for that time too, up to this much.
      */
     static final double MAX_HELD_READING_SEC = 0.5;
+    /**
+     * A failed I2C read of a Pinpoint on firmware v3 or later comes back as all zeros, and the SDK driver passes it
+     * on as status NOT_READY with heading 0: a blank loop, not a restart. If the next good reading continues from the
+     * last one within this long, the turn made across the blank is counted. A real restart takes longer and passes
+     * through CALIBRATING, so it is never bridged.
+     */
+    static final double MAX_BLANK_GAP_SEC = 0.15;
     /** How much the robot must have turned, by both sensors, before the backup's agreement is judged. */
     static final double BACKUP_TRUST_AFTER_DEG = 45.0;
     /** The backup is trusted while its turns are this close to the main sensor's (1.0 = identical, same way round). */
@@ -1310,6 +1335,12 @@ public class iamyou extends LinearOpMode {
         private double primaryHeldSeconds = 0.0;
         /** True when this loop's main reading is a bad read (FAULT_BAD_READ). Set before update(). */
         private boolean badRead = false;
+        /** True when this loop's main reading is a blank failed read (NOT_READY, heading 0). Set before update(). */
+        private boolean blankRead = false;
+        /** The current gap in the main sensor: how long, whether it is only blank reads, and the backup used in it. */
+        private double gapSeconds = 0.0;
+        private boolean gapBridgeable = false;
+        private double backupUsedInGap = 0.0;
         private double lastBackup = Double.NaN;
         /** True after a loop the main sensor was frozen: its next reading starts a new baseline, it is not a turn. */
         private boolean primaryGap = false;
@@ -1363,10 +1394,12 @@ public class iamyou extends LinearOpMode {
                 primaryScale = PINPOINT_TURN_SCALE;
                 backupScale = HUB_IMU_TURN_SCALE;
                 badRead = status == GoBildaPinpointDriver.DeviceStatus.FAULT_BAD_READ;
+                blankRead = status == GoBildaPinpointDriver.DeviceStatus.NOT_READY;
                 return update(signed(pinpoint.getHeading(AngleUnit.DEGREES), PINPOINT_HEADING_REVERSED),
                         freshHeading(status), imuYaw, imuRead, dtSeconds);
             }
             primaryScale = HUB_IMU_TURN_SCALE;
+            blankRead = false;
             return update(imuYaw, imuRead, Double.NaN, false, dtSeconds);
         }
 
@@ -1405,8 +1438,21 @@ public class iamyou extends LinearOpMode {
             // nothing) already stood in for the motion it missed, and adding its catch-up would count it twice.
             double primaryTurn = fresh && !primaryGap ? turn(lastPrimary, primaryDeg) * primaryScale : Double.NaN;
             boolean primaryOk = !Double.isNaN(primaryTurn) && Math.abs(primaryTurn) <= primaryLimit;
+            // Except after a short gap of blank reads only: the Pinpoint never stopped measuring, so a reading that
+            // continues from the last good one carries the turn made across the gap. Dropping it (as a restart's
+            // new baseline would) loses a loop's turn at every failed read, always the way the robot was turning.
+            boolean bridged = false;
+            if (fresh && primaryGap && gapBridgeable && gapSeconds + dt <= MAX_BLANK_GAP_SEC) {
+                double across = turn(lastPrimary, primaryDeg) * primaryScale;
+                if (!Double.isNaN(across)
+                        && Math.abs(across) <= MAX_TURN_RATE_DEG_PER_SEC * (gapSeconds + dt) + TURN_JUMP_SLACK_DEG) {
+                    primaryTurn = across;
+                    primaryOk = true;
+                    bridged = true;
+                }
+            }
 
-            if (primaryOk && backupOk && Math.abs(primaryTurn) >= BACKUP_JUDGE_MIN_TURN_DEG) {
+            if (primaryOk && !bridged && backupOk && Math.abs(primaryTurn) >= BACKUP_JUDGE_MIN_TURN_DEG) {
                 sumPrimarySquared += primaryTurn * primaryTurn;
                 sumPrimaryTimesBackup += primaryTurn * backupTurn;
                 judgedTurn += Math.abs(primaryTurn);
@@ -1416,7 +1462,8 @@ public class iamyou extends LinearOpMode {
             double turned = 0.0;
             boolean measured = false;
             if (primaryOk) {
-                turned = primaryTurn;
+                // A bridged turn includes what the backup already stood in for during the gap: only the rest is new.
+                turned = bridged ? primaryTurn - backupUsedInGap : primaryTurn;
                 measured = true;
                 primarySinceZero += primaryTurn;
             } else if (backupOk && !hasPrimary && Double.isNaN(lastPrimary)) {
@@ -1470,7 +1517,18 @@ public class iamyou extends LinearOpMode {
                 lastPrimary = primaryDeg;
                 primaryGap = false;
             } else if (!firstPrimary) {
+                if (!primaryGap) {
+                    // A gap begins. It can be bridged only if it began with a good reading to continue from.
+                    gapSeconds = 0.0;
+                    gapBridgeable = true;
+                    backupUsedInGap = 0.0;
+                }
                 primaryGap = true;
+                gapSeconds += dt;
+                gapBridgeable = gapBridgeable && blankRead;
+                if (usedBackup) {
+                    backupUsedInGap += turned;
+                }
             }
             if (hasBackup && backupHealthy) {
                 lastBackup = backupDeg;
@@ -1533,6 +1591,11 @@ public class iamyou extends LinearOpMode {
             this.badRead = badRead;
         }
 
+        /** For tests: says the next main reading is a blank read (NOT_READY), as update(pinpoint, imu) does. */
+        void setBlankRead(boolean blankRead) {
+            this.blankRead = blankRead;
+        }
+
         /** For tests: the turn scales update(pinpoint, imu) would take from the constants. */
         void setScales(double primary, double backup) {
             primaryScale = primary;
@@ -1557,6 +1620,9 @@ public class iamyou extends LinearOpMode {
             backupSinceZero = 0.0;
             lastPrimary = Double.NaN;
             primaryHeldSeconds = 0.0;
+            gapSeconds = 0.0;
+            gapBridgeable = false;
+            backupUsedInGap = 0.0;
             lastBackup = Double.NaN;
             primaryGap = true;
             backupGap = true;
@@ -1755,25 +1821,13 @@ public class iamyou extends LinearOpMode {
     }
 
     // =====================================================================================================
-    // FLYWHEEL (OUTTAKE) VELOCITY PIDF
+    // FLYWHEEL (OUTTAKE)
     //
-    // One press turns the flywheel on, the next turns it off. While ON it holds FLYWHEEL_TARGET_TPS (encoder ticks per
-    // second) with a PIDF loop run here on the Control Hub every loop, not the hub's built-in velocity mode, so every
-    // term is visible in telemetry and the same class runs in the tuning OpMode (FlywheelPIDFTuning) and the tests.
+    // One press turns the flywheel on, the next turns it off. While ON the hub's built-in velocity PIDF holds
+    // FLYWHEEL_TARGET_TPS (encoder ticks per second) with shootCommand.VELOCITY_PIDF, the same gains every AUTO uses;
+    // while OFF the motor is in power mode at 0 and coasts (FLOAT). Outtake only decides ON/OFF and READY.
     //
-    //   power = (kS + kV * target) * 12 V / battery        feedforward: the power that holds this speed by itself
-    //         + kP * error                                  pushes back toward the target after a shot slows the wheel
-    //         + kI * (sum of error)                         removes the last small steady error (friction, wear)
-    //         - kD * (rate the wheel is speeding up)        damps overshoot; 0 is usually fine for a flywheel
-    //
-    // The feedforward is scaled by battery voltage, so a full battery and a tired one shoot the same distance: that is
-    // what the old fixed OUTTAKE_POWER could not do. Power stays between 0 and 1: the flywheel is never driven
-    // backwards and never braked; above target it just coasts down (motor set to FLOAT).
-    //
-    // TUNING (run "Flywheel PIDF Tuning", copy the numbers back here):
-    //   1. kP = kI = kD = 0. Raise kV until the wheel settles at the target by itself (a bit under is fine).
-    //   2. Raise kP until a shot's dip recovers fast without the speed bouncing around the target.
-    //   3. Only if it still settles a little low, add a small kI.
+    // FlywheelPIDF below is the software loop "Flywheel PIDF Tuning" runs; no match OpMode uses it.
     // =====================================================================================================
 
     /** Flywheel speed while ON, in encoder ticks per second (the 6000 rpm motor's free speed is about 2800). */
@@ -1889,36 +1943,38 @@ public class iamyou extends LinearOpMode {
         }
     }
 
-    /** Flywheel state carried between loops: on/off toggle plus the PIDF. */
+    /**
+     * Flywheel state carried between loops: the ON/OFF toggle and the READY timer. The speed itself is held by the
+     * hub's velocity PIDF, so this only says what to command.
+     */
     static class Outtake {
-        final FlywheelPIDF pidf = new FlywheelPIDF();
         private boolean on = false;
         private boolean lastButton = false;
-        private double power = 0.0;
+        private double readySeconds = 0.0;
 
         /**
          * @param toggleButton true while the flywheel button is held; each new press flips ON/OFF
          * @param measuredTps  flywheel encoder speed, ticks per second
-         * @param volts        battery voltage
          * @param dtSeconds    time since the previous loop
-         * @return the power to send to the flywheel motor
+         * @return the speed to command, ticks per second; 0 means OFF (coast)
          */
-        double update(boolean toggleButton, double measuredTps, double volts, double dtSeconds) {
+        double update(boolean toggleButton, double measuredTps, double dtSeconds) {
             if (toggleButton && !lastButton) {
                 on = !on;
             }
             lastButton = toggleButton;
-            power = pidf.update(on ? FLYWHEEL_TARGET_TPS : 0.0, measuredTps, volts, dtSeconds);
-            return power;
+            boolean close = on && Math.abs(FLYWHEEL_TARGET_TPS - measuredTps) <= FLYWHEEL_READY_TOLERANCE_TPS;
+            readySeconds = close ? readySeconds + Math.max(0.0, finite(dtSeconds, 0.0)) : 0.0;
+            return on ? FLYWHEEL_TARGET_TPS : 0.0;
         }
 
         boolean isOn() {
             return on;
         }
 
-        /** True when ON and holding the target speed: safe to feed a ball. */
+        /** True when ON and the speed has held within tolerance for FLYWHEEL_READY_SEC: safe to feed a ball. */
         boolean isReady() {
-            return on && pidf.isReady();
+            return on && readySeconds >= FLYWHEEL_READY_SEC;
         }
     }
 }

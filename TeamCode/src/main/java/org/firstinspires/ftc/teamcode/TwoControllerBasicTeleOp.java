@@ -34,7 +34,7 @@ public class TwoControllerBasicTeleOp extends LinearOpMode {
 
         DcMotorEx outtake = hardwareMap.get(DcMotorEx.class, "OUTTAKE");
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-        outtake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        shootCommand.configure(outtake);
 
 
         telemetry.addData("Status", "Initialized");
@@ -67,7 +67,7 @@ public class TwoControllerBasicTeleOp extends LinearOpMode {
 
             //outtake power
             if (gamepad2.right_trigger!=0){
-                outtake.setVelocity(gamepad2.right_trigger*-100000);
+                outtake.setVelocity(gamepad2.right_trigger * -shootCommand.TARGET_TICKS_PER_SECOND);
             }else{
                 outtake.setPower(0);
             }

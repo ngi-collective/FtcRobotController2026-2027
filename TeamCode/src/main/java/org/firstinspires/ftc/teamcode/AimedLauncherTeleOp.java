@@ -94,7 +94,7 @@ public class AimedLauncherTeleOp extends LinearOpMode {
         // Commanded by speed, not power: a tiring battery drops a power-commanded wheel by a
         // couple of hundred rev/min, and every shot drops short with it. The solver's answer is a
         // speed, so the mechanism had better be able to hold one.
-        flywheel.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        shootCommand.configure(flywheel);
         flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
         CRServo intake = hardwareMap.get(CRServo.class, "intake");
