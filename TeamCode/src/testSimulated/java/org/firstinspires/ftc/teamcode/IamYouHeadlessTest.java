@@ -154,12 +154,12 @@ public class IamYouHeadlessTest {
         // About 0.9 m short of red's raised CELL and fifteen degrees clockwise of it, well inside the 0.46-2 m band
         // the forward, 45-degree camera frames the cluster in.
         hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(75.0)));
-        // Flywheel on, and X to turn the aimer on: both toggles, so press and let go.
-        harness.gamepad1().left_bumper = true;
+        // Flywheel on (gamepad 2, the operator's), and X on gamepad 1 to turn the aimer on: both toggles, so press and let go.
+        harness.gamepad2().left_bumper = true;
         setX(true);
         for (int tick = 0; tick < 500 && !aimSettled(); tick++) {
             if (tick == 5) {
-                harness.gamepad1().left_bumper = false;
+                harness.gamepad2().left_bumper = false;
                 setX(false);
             }
             harness.advance(TICK);
@@ -214,18 +214,18 @@ public class IamYouHeadlessTest {
     }
 
     @Test
-    public void triggerRunsTheIntakeInAndBumperEjects() {
+    public void operatorTriggerRunsTheIntakeInAndBumperEjects() {
         launchAndStart();
 
-        harness.gamepad1().right_trigger = 1.0f;
+        harness.gamepad2().right_trigger = 1.0f;
         awaitIntakePower(iamyou.INTAKE_POWER);
 
         // Eject wins over a held trigger.
-        harness.gamepad1().right_bumper = true;
+        harness.gamepad2().right_bumper = true;
         awaitIntakePower(-iamyou.EJECT_POWER);
 
-        harness.gamepad1().right_bumper = false;
-        harness.gamepad1().right_trigger = 0.0f;
+        harness.gamepad2().right_bumper = false;
+        harness.gamepad2().right_trigger = 0.0f;
         awaitIntakePower(0.0);
     }
 
@@ -233,7 +233,7 @@ public class IamYouHeadlessTest {
     public void stoppingCutsPowerToEveryWheelAndTheIntake() {
         launchAndStart();
         harness.gamepad1().left_stick_y = -1.0f;
-        harness.gamepad1().right_trigger = 1.0f;
+        harness.gamepad2().right_trigger = 1.0f;
         awaitSteadyWheelPowers();
         awaitIntakePower(iamyou.INTAKE_POWER);
 

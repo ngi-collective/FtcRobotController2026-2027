@@ -145,10 +145,15 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit, as
 - **Every shot is taken against the wall.** Paths back to a shot end an inch off it (`SHOOT`), and
   the shot settles on `FRONT_WALL_SHOT` or `REAR_WALL_SHOT`, 0.4 in inside the wall, so the follower
   holds the chassis pressed flat against it through the shot.
-- **The flywheel is set up for `setVelocity` at every AUTO's INIT** (`shootCommand.configure`):
-  `RUN_USING_ENCODER` plus explicit PIDF, the REV hub's defaults, because the hub keeps whatever
-  mode and gains were last set, and the TeleOp leaves it open loop while `FlywheelPIDFTuning`
-  zeroes P and F.
+- **Every flywheel is held by the hub's velocity PIDF** (`shootCommand.configure`, at INIT: the
+  Pedro AUTOs, `iamyou`, `iamyouOneController`, `LauncherTeleOp`, `AimedLauncherTeleOp`,
+  `TwoControllerBasicTeleOp`): `RUN_USING_ENCODER` plus `shootCommand.VELOCITY_PIDF` (P 15, F 11),
+  because the hub keeps whatever mode and gains were last set. F ≈ 32767 / free speed carries the
+  speed; P only recovers each ball's dip. The measured P 50 / F 3 overshot the first balls and
+  undershot the later ones. `iamyou` switches to `RUN_WITHOUT_ENCODER` while its flywheel is off so
+  it coasts rather than being braked. Only `FlywheelPIDFTuning` still runs the software
+  `iamyou.FlywheelPIDF`. `SweepAndShootAuto` is sim-only and keeps the hub's default gains: its
+  timed sweep stops tipping the HIVE with these.
 - **Every Pedro AUTO keeps the same rules** (`AutoTimeline`, run on all sixteen by the
   `…AutoTimelineTest` and `…TipAware…Test` classes): pre-loads shot before any intake,
   one collection per shot, no intake while shooting, settle on the spot before a shot, spin the

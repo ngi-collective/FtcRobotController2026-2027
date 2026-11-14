@@ -11,7 +11,6 @@ import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.robotcore.hardware.VoltageSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -255,16 +254,14 @@ public class iamyou extends LinearOpMode {
         // ================= FLYWHEEL (OUTTAKE MOTOR) =================
         DcMotorEx outtake = hardwareMap.get(DcMotorEx.class, OUTTAKE_NAME);
         outtake.setDirection(OUTTAKE_REVERSED ? DcMotorSimple.Direction.REVERSE : DcMotorSimple.Direction.FORWARD);
-        // Plain power mode: the velocity PIDF runs here (Outtake / FlywheelPIDF), reading the encoder each loop.
+        // Velocity mode with the hub's own PIDF (shootCommand.VELOCITY_PIDF) holds the speed while ON. While OFF the
+        // motor is put back in plain power mode, so the wheel coasts down instead of being braked to zero.
+        shootCommand.configure(outtake);
         outtake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        boolean flywheelVelocityMode = false;
         // Coast to a stop: braking a spinning flywheel hard is a shock load on the motor and gears.
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
 
-        // Battery voltage, so the flywheel's feedforward gives the same speed on a full or a tired battery.
-        VoltageSensor battery = hardwareMap.voltageSensor.iterator().hasNext()
-                ? hardwareMap.voltageSensor.iterator().next() : null;
-        double batteryVolts = FLYWHEEL_NOMINAL_VOLTS;
-        double voltsReadAge = Double.MAX_VALUE;
         boolean wasReady = false;
 
         // ================= CAMERA =================
@@ -542,18 +539,21 @@ public class iamyou extends LinearOpMode {
                 lastIntakePower = intakeResult.power;
 
                 // ---- Flywheel ----
-                // The voltage read is a separate hub command, not in the bulk read, so only a few times a second.
-                voltsReadAge += dt;
-                if (battery != null && voltsReadAge >= 0.25) {
-                    double v = battery.getVoltage();
-                    if (v > 7.0 && v < 16.0) {
-                        batteryVolts += (v - batteryVolts) * 0.5;
-                    }
-                    voltsReadAge = 0.0;
-                }
                 double flywheelTicksPerSec = outtake.getVelocity();
-                double outtakePower = outtakeLogic.update(mech.left_bumper, flywheelTicksPerSec, batteryVolts, dt);
-                outtake.setPower(outtakePower);
+                double flywheelTarget = outtakeLogic.update(mech.left_bumper, flywheelTicksPerSec, dt);
+                if (flywheelTarget > 0.0) {
+                    if (!flywheelVelocityMode) {
+                        outtake.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+                        flywheelVelocityMode = true;
+                    }
+                    outtake.setVelocity(flywheelTarget);
+                } else {
+                    if (flywheelVelocityMode) {
+                        outtake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+                        flywheelVelocityMode = false;
+                    }
+                    outtake.setPower(0.0);
+                }
                 boolean flywheelReady = outtakeLogic.isReady();
                 if (flywheelReady && !wasReady) {
                     mech.rumble(200);
@@ -564,10 +564,9 @@ public class iamyou extends LinearOpMode {
                 for (String line : shotIndicator(outtakeLogic.isOn(), flywheelReady, flywheelTicksPerSec)) {
                     telemetry.addLine(line);
                 }
-                telemetry.addData("Flywheel", "%s  %.0f / %.0f rpm  power %.2f",
+                telemetry.addData("Flywheel", "%s  %.0f / %.0f rpm",
                         !outtakeLogic.isOn() ? "OFF" : flywheelReady ? "READY" : "spinning up",
-                        ticksPerSecToRpm(flywheelTicksPerSec),
-                        outtakeLogic.isOn() ? ticksPerSecToRpm(FLYWHEEL_TARGET_TPS) : 0.0, outtakePower);
+                        ticksPerSecToRpm(flywheelTicksPerSec), ticksPerSecToRpm(flywheelTarget));
                 if (resetPending) {
                     telemetry.addLine("HEADING RESET: stop the robot to finish");
                 } else if (calibrating) {
@@ -607,7 +606,9 @@ public class iamyou extends LinearOpMode {
                     telemetry.addData("Drive Check", driveCheck.report());
                     telemetry.addData("Still Check", stillReport(wheels, gamepad1, still,
                             aimerMayTurn(aimer, outtakeLogic)));
-                    telemetry.addData("Flywheel PIDF", "%s  %.1f V", outtakeLogic.pidf.terms(), batteryVolts);
+                    telemetry.addData("Flywheel PIDF (hub)", "P %.1f  I %.1f  D %.1f  F %.1f",
+                            shootCommand.VELOCITY_PIDF.p, shootCommand.VELOCITY_PIDF.i,
+                            shootCommand.VELOCITY_PIDF.d, shootCommand.VELOCITY_PIDF.f);
                     telemetry.addData("Cmd Fwd | Right", "%.2f | %.2f", result.stickForward, result.stickRight);
                     telemetry.addData("Robot Fwd | Right", "%.2f | %.2f", result.robotForward, result.robotRight);
                 }
@@ -1820,25 +1821,13 @@ public class iamyou extends LinearOpMode {
     }
 
     // =====================================================================================================
-    // FLYWHEEL (OUTTAKE) VELOCITY PIDF
+    // FLYWHEEL (OUTTAKE)
     //
-    // One press turns the flywheel on, the next turns it off. While ON it holds FLYWHEEL_TARGET_TPS (encoder ticks per
-    // second) with a PIDF loop run here on the Control Hub every loop, not the hub's built-in velocity mode, so every
-    // term is visible in telemetry and the same class runs in the tuning OpMode (FlywheelPIDFTuning) and the tests.
+    // One press turns the flywheel on, the next turns it off. While ON the hub's built-in velocity PIDF holds
+    // FLYWHEEL_TARGET_TPS (encoder ticks per second) with shootCommand.VELOCITY_PIDF, the same gains every AUTO uses;
+    // while OFF the motor is in power mode at 0 and coasts (FLOAT). Outtake only decides ON/OFF and READY.
     //
-    //   power = (kS + kV * target) * 12 V / battery        feedforward: the power that holds this speed by itself
-    //         + kP * error                                  pushes back toward the target after a shot slows the wheel
-    //         + kI * (sum of error)                         removes the last small steady error (friction, wear)
-    //         - kD * (rate the wheel is speeding up)        damps overshoot; 0 is usually fine for a flywheel
-    //
-    // The feedforward is scaled by battery voltage, so a full battery and a tired one shoot the same distance: that is
-    // what the old fixed OUTTAKE_POWER could not do. Power stays between 0 and 1: the flywheel is never driven
-    // backwards and never braked; above target it just coasts down (motor set to FLOAT).
-    //
-    // TUNING (run "Flywheel PIDF Tuning", copy the numbers back here):
-    //   1. kP = kI = kD = 0. Raise kV until the wheel settles at the target by itself (a bit under is fine).
-    //   2. Raise kP until a shot's dip recovers fast without the speed bouncing around the target.
-    //   3. Only if it still settles a little low, add a small kI.
+    // FlywheelPIDF below is the software loop "Flywheel PIDF Tuning" runs; no match OpMode uses it.
     // =====================================================================================================
 
     /** Flywheel speed while ON, in encoder ticks per second (the 6000 rpm motor's free speed is about 2800). */
@@ -1954,36 +1943,38 @@ public class iamyou extends LinearOpMode {
         }
     }
 
-    /** Flywheel state carried between loops: on/off toggle plus the PIDF. */
+    /**
+     * Flywheel state carried between loops: the ON/OFF toggle and the READY timer. The speed itself is held by the
+     * hub's velocity PIDF, so this only says what to command.
+     */
     static class Outtake {
-        final FlywheelPIDF pidf = new FlywheelPIDF();
         private boolean on = false;
         private boolean lastButton = false;
-        private double power = 0.0;
+        private double readySeconds = 0.0;
 
         /**
          * @param toggleButton true while the flywheel button is held; each new press flips ON/OFF
          * @param measuredTps  flywheel encoder speed, ticks per second
-         * @param volts        battery voltage
          * @param dtSeconds    time since the previous loop
-         * @return the power to send to the flywheel motor
+         * @return the speed to command, ticks per second; 0 means OFF (coast)
          */
-        double update(boolean toggleButton, double measuredTps, double volts, double dtSeconds) {
+        double update(boolean toggleButton, double measuredTps, double dtSeconds) {
             if (toggleButton && !lastButton) {
                 on = !on;
             }
             lastButton = toggleButton;
-            power = pidf.update(on ? FLYWHEEL_TARGET_TPS : 0.0, measuredTps, volts, dtSeconds);
-            return power;
+            boolean close = on && Math.abs(FLYWHEEL_TARGET_TPS - measuredTps) <= FLYWHEEL_READY_TOLERANCE_TPS;
+            readySeconds = close ? readySeconds + Math.max(0.0, finite(dtSeconds, 0.0)) : 0.0;
+            return on ? FLYWHEEL_TARGET_TPS : 0.0;
         }
 
         boolean isOn() {
             return on;
         }
 
-        /** True when ON and holding the target speed: safe to feed a ball. */
+        /** True when ON and the speed has held within tolerance for FLYWHEEL_READY_SEC: safe to feed a ball. */
         boolean isReady() {
-            return on && pidf.isReady();
+            return on && readySeconds >= FLYWHEEL_READY_SEC;
         }
     }
 }

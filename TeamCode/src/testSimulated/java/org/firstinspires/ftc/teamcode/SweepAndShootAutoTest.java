@@ -22,8 +22,8 @@ import org.ngicollective.ftcsim.sim.Pose2d;
 import org.ngicollective.ftcsim.sim.RobotConfig;
 import org.ngicollective.ftcsim.sim.SimConfigFiles;
 
-import java.util.Collections;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * That the AUTO actually scores, run against the field it is written for.
@@ -45,12 +45,13 @@ class SweepAndShootAutoTest {
     private static final Pose2d START = new Pose2d(-0.55, -1.431, Math.toRadians(90.0));
 
     /**
-     * Simulated seconds per step, paced against the wall clock.
+     * Simulated seconds per step, kept level with the wall clock.
      *
      * <p>An OpMode's own waits are on the wall clock, because that is the only clock a real robot
-     * has, so a test that ran the world faster than real time would have the routine's steps end
-     * early and the sweep cover a fraction of the row. Stepping 20&nbsp;ms of world per 20&nbsp;ms
-     * of wall clock is what keeps the two agreeing.</p>
+     * has, so the world has to advance exactly as fast as wall time does. Stepping once and then
+     * sleeping a full tick fell behind by however long each step took, so on a loaded machine the
+     * sweeps covered too little of the field in world time and two or three POLLEN never reached
+     * the CELL. {@link #runInRealTime} steps however many ticks the wall clock is owed.</p>
      */
     private static final double TICK = 0.02;
 
@@ -72,12 +73,8 @@ class SweepAndShootAutoTest {
         // The routine is about 7 s of spin-up, two sweeps and a settle, and then it stands there
         // reporting "done" until something stops it -- which is the point, since a dashboard
         // session rebuilds the field the moment an OpMode ends.
-        List<String> telemetry = Collections.emptyList();
-        for (int tick = 0; tick < 500 && !done(telemetry); tick++) {
-            harness.advance(TICK);
-            Thread.sleep(20);
-            telemetry = harness.lastTelemetry();
-        }
+        runInRealTime(harness, 10.0, () -> done(harness.lastTelemetry()));
+        List<String> telemetry = harness.lastTelemetry();
 
         assertTrue(done(telemetry),
                 "the routine should have reported itself done; its last word was " + telemetry);
@@ -101,6 +98,25 @@ class SweepAndShootAutoTest {
 
         harness.pressStop();
         harness.awaitCompletion(2000);
+    }
+
+    /**
+     * Steps the world until {@code stop} holds or {@code limitSeconds} of world time pass, never
+     * letting world time fall behind the wall clock by more than a tick or run ahead of it.
+     */
+    private static void runInRealTime(LinearOpModeHarness harness, double limitSeconds,
+            BooleanSupplier stop) throws InterruptedException {
+        long start = System.nanoTime();
+        double world = 0.0;
+        while (world < limitSeconds && !stop.getAsBoolean()) {
+            double wall = (System.nanoTime() - start) / 1e9;
+            if (world + TICK <= wall) {
+                harness.advance(TICK);
+                world += TICK;
+            } else {
+                Thread.sleep(1);
+            }
+        }
     }
 
     /** Whether the routine has reported itself finished, which is its last telemetry line. */
@@ -138,10 +154,7 @@ class SweepAndShootAutoTest {
         LinearOpModeHarness harness = OpModeHarness.forLinear(new SweepAndShootAuto(), hardware);
         harness.launch();
         harness.pressStart();
-        for (int tick = 0; tick < 250 && !harness.isFinished(); tick++) {
-            harness.advance(TICK);
-            Thread.sleep(20);
-        }
+        runInRealTime(harness, 5.0, harness::isFinished);
 
         int inTheCell = 0;
         for (GameElement element : world.elements()) {

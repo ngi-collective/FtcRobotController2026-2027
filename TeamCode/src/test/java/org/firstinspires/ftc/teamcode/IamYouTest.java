@@ -744,84 +744,48 @@ class IamYouTest {
         assertTrue(turn > 0.2 && forward > 0.3, "turn " + turn + " forward " + forward);
     }
 
-    // ------------------------------------------------------------------ flywheel PIDF
-
-    /**
-     * A flywheel that settles, a third of a second later, at the speed its power and battery give it. It needs more
-     * than the tuned feedforward guesses (friction 0.04, 3200 ticks/s per unit at 12 V, where kV = 0.0003 says 3333),
-     * so P and I have work to do.
-     */
-    private static final class FlywheelModel {
-        double tps = 0.0;
-
-        void step(double power, double volts, double dt) {
-            double steady = Math.max(0.0, power * volts / 12.0 - 0.04) * 3200.0;
-            tps += (steady - tps) * dt / 0.3;
-        }
-    }
-
-    private static double runFlywheel(iamyou.Outtake out, FlywheelModel wheel, double volts, double seconds) {
-        double power = 0.0;
-        for (int i = 0; i < Math.round(seconds / DT); i++) {
-            power = out.update(false, wheel.tps, volts, DT);
-            assertTrue(power >= 0.0 && power <= 1.0, "power " + power);
-            wheel.step(power, volts, DT);
-        }
-        return power;
-    }
+    // ------------------------------------------------------------------ flywheel
 
     @Test
-    void testFlywheelReachesTheTargetAndSaysReady() {
+    void testFlywheelButtonTogglesTheCommandedSpeed() {
         iamyou.Outtake out = new iamyou.Outtake();
-        FlywheelModel wheel = new FlywheelModel();
-        out.update(true, 0.0, 12.5, DT);                        // press: ON
-        assertTrue(out.isOn());
-        assertFalse(out.isReady());
-        runFlywheel(out, wheel, 12.5, 3.0);
-        assertEquals(iamyou.FLYWHEEL_TARGET_TPS, wheel.tps, iamyou.FLYWHEEL_READY_TOLERANCE_TPS);
-        assertTrue(out.isReady());
-    }
-
-    @Test
-    void testFlywheelHoldsTheSameSpeedOnAFullAndATiredBattery() {
-        for (double volts : new double[]{13.5, 12.0, 11.0}) {
-            iamyou.Outtake out = new iamyou.Outtake();
-            FlywheelModel wheel = new FlywheelModel();
-            out.update(true, 0.0, volts, DT);
-            runFlywheel(out, wheel, volts, 4.0);
-            assertEquals(iamyou.FLYWHEEL_TARGET_TPS, wheel.tps, iamyou.FLYWHEEL_READY_TOLERANCE_TPS, volts + " V");
-        }
-    }
-
-    @Test
-    void testFlywheelRecoversFromAShotDipWithoutOvershootingMuch() {
-        iamyou.Outtake out = new iamyou.Outtake();
-        FlywheelModel wheel = new FlywheelModel();
-        out.update(true, 0.0, 12.5, DT);
-        runFlywheel(out, wheel, 12.5, 3.0);
-        wheel.tps -= 400.0;                                     // a ball takes energy out of the wheel
-        assertFalse(runFlywheel(out, wheel, 12.5, DT) > 1.0);
-        assertFalse(out.isReady());
-        double worst = 0.0;
-        for (int i = 0; i < 50; i++) {                          // one second
-            runFlywheel(out, wheel, 12.5, DT);
-            worst = Math.max(worst, wheel.tps - iamyou.FLYWHEEL_TARGET_TPS);
-        }
-        assertTrue(worst < 100.0, "overshoot " + worst);
-        assertTrue(out.isReady(), "back up to speed within a second");
-    }
-
-    @Test
-    void testFlywheelOffMeansZeroPowerAndForgetsTheITerm() {
-        iamyou.Outtake out = new iamyou.Outtake();
-        FlywheelModel wheel = new FlywheelModel();
-        out.update(true, 0.0, 12.5, DT);
-        runFlywheel(out, wheel, 12.5, 3.0);
-        out.update(false, wheel.tps, 12.5, DT);
-        assertEquals(0.0, out.update(true, wheel.tps, 12.5, DT), EPS);   // press again: OFF
+        assertEquals(0.0, out.update(false, 0.0, DT), EPS);
+        assertEquals(iamyou.FLYWHEEL_TARGET_TPS, out.update(true, 0.0, DT), EPS);    // press: ON
+        assertEquals(iamyou.FLYWHEEL_TARGET_TPS, out.update(true, 0.0, DT), EPS);    // still held: stays ON
+        assertEquals(iamyou.FLYWHEEL_TARGET_TPS, out.update(false, 0.0, DT), EPS);
+        assertEquals(0.0, out.update(true, 0.0, DT), EPS);                           // press again: OFF
         assertFalse(out.isOn());
+    }
+
+    @Test
+    void testFlywheelIsReadyOnlyAfterHoldingTheTargetForAWhile() {
+        iamyou.Outtake out = new iamyou.Outtake();
+        out.update(true, 0.0, DT);
+        double near = iamyou.FLYWHEEL_TARGET_TPS - iamyou.FLYWHEEL_READY_TOLERANCE_TPS * 0.5;
+        int loops = (int) Math.ceil(iamyou.FLYWHEEL_READY_SEC / DT);
+        for (int i = 0; i < loops - 1; i++) {
+            out.update(false, near, DT);
+        }
+        assertFalse(out.isReady(), "not before FLYWHEEL_READY_SEC");
+        out.update(false, near, DT);
+        assertTrue(out.isReady());
+
+        out.update(false, iamyou.FLYWHEEL_TARGET_TPS - 400.0, DT);    // a ball takes energy out of the wheel
+        assertFalse(out.isReady(), "a shot's dip clears READY");
+        out.update(false, Double.NaN, DT);
+        assertFalse(out.isReady(), "a bad encoder reading is never READY");
+    }
+
+    @Test
+    void testFlywheelOffIsNeverReady() {
+        iamyou.Outtake out = new iamyou.Outtake();
+        out.update(true, 0.0, DT);
+        for (int i = 0; i < 50; i++) {
+            out.update(false, iamyou.FLYWHEEL_TARGET_TPS, DT);
+        }
+        assertTrue(out.isReady());
+        out.update(true, iamyou.FLYWHEEL_TARGET_TPS, DT);              // OFF while still spinning at speed
         assertFalse(out.isReady());
-        assertEquals("F 0.00  P 0.00  I 0.00  D 0.00", out.pidf.terms());
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 
@@ -182,8 +183,8 @@ public class SweepAndShootAuto extends LinearOpMode {
     private void spinUpTo(ShotSolver.Shot shot) {
         command(shot);
         step = "spinning up";
-        for (double waited = 0.0; waited < SPIN_UP_SECONDS && opModeIsActive();
-                waited += STEP_SECONDS) {
+        ElapsedTime waited = new ElapsedTime();
+        while (waited.seconds() < SPIN_UP_SECONDS && opModeIsActive()) {
             if (Math.abs(revolutionsPerMinute() - commanded(shot)) < READY_REVOLUTIONS_PER_MINUTE) {
                 return;
             }
@@ -221,9 +222,15 @@ public class SweepAndShootAuto extends LinearOpMode {
         drive.stop();
     }
 
+    /**
+     * Holds the current command for {@code seconds} of clock time. Timed by the clock rather than
+     * by counting loops: each loop overruns its sleep a little, and counted loops stretched a
+     * 2.4&nbsp;s sweep by however much the CPU was busy, carrying the far row past the mouth.
+     */
     private void hold(double seconds, String what) {
         step = what;
-        for (double held = 0.0; held < seconds && opModeIsActive(); held += STEP_SECONDS) {
+        ElapsedTime held = new ElapsedTime();
+        while (held.seconds() < seconds && opModeIsActive()) {
             report();
             sleep((long) (STEP_SECONDS * 1000.0));
         }
