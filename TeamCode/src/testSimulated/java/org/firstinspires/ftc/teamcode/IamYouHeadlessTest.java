@@ -292,8 +292,7 @@ public class IamYouHeadlessTest {
             }
             // Positive right stick turns clockwise, which is a falling heading.
             harness.gamepad1().right_stick_x = (float) (error > 0 ? -0.4 : 0.4);
-            harness.advance(TICK);
-            harness.eventLoopIteration();
+            step();
         }
         release();
     }
@@ -305,8 +304,25 @@ public class IamYouHeadlessTest {
         harness.gamepad1().right_stick_x = 0.0f;
         harness.gamepad1().left_trigger = 0.0f;
         for (int tick = 0; tick < 25; tick++) {
-            harness.advance(TICK);
-            harness.eventLoopIteration();
+            step();
+        }
+    }
+
+    /**
+     * One tick of world time, then a tick of wall time for the OpMode to see it.
+     *
+     * <p>The OpMode reads its sensors and steers on its own thread. Stepping the world without waiting let it run
+     * ahead of the OpMode on a loaded machine: the robot kept turning after the OpMode's last heading read, or drove
+     * on commands mixed for a heading it had already left, and field-centric drifted ten degrees off line.</p>
+     */
+    private void step() {
+        harness.advance(TICK);
+        harness.eventLoopIteration();
+        try {
+            Thread.sleep((long) (TICK * 1000.0));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("interrupted while stepping", e);
         }
     }
 
@@ -341,8 +357,7 @@ public class IamYouHeadlessTest {
 
         Pose2d start = hardware.drive().pose();
         for (int tick = 0; tick < Math.round(seconds / TICK); tick++) {
-            harness.advance(TICK);
-            harness.eventLoopIteration();
+            step();
         }
         Pose2d end = hardware.drive().pose();
         return new Pose2d(end.x() - start.x(), end.y() - start.y(), end.heading() - start.heading());
