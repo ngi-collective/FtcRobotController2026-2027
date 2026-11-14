@@ -41,6 +41,7 @@ public class FlywheelPIDFTuning extends OpMode {
     private int stepIndex = 1;
     private double volts = iamyou.FLYWHEEL_NOMINAL_VOLTS;
     private double peakError = 0.0;
+    CRServo staging;
 
     @Override
     public void init() {
@@ -50,6 +51,8 @@ public class FlywheelPIDFTuning extends OpMode {
         flywheel.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         battery = hardwareMap.voltageSensor.iterator().hasNext() ? hardwareMap.voltageSensor.iterator().next() : null;
+        staging = hardwareMap.get(CRServo.class, "Staging");
+        staging.setDirection(DcMotorSimple.Direction.REVERSE);
         telemetry.addLine("Init complete. A = flywheel on/off.");
     }
 
@@ -81,6 +84,9 @@ public class FlywheelPIDFTuning extends OpMode {
         }
         if (gamepad1.dpadDownWasPressed()) {
             adjust(-STEPS[stepIndex]);
+        }
+        if (gamepad1.bWasPressed()){
+            staging.setPower(1);
         }
 
         if (battery != null) {

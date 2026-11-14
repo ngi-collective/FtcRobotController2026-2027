@@ -505,6 +505,73 @@ class IamYouTest {
     }
 
     @Test
+    void testBlankReadsLoseNoTurn() {
+        // Firmware v3+: a failed I2C read arrives as zeros (NOT_READY, heading 0). Every fifth loop is one, while
+        // turning 3 degrees a loop with no backup. Each must be bridged, not taken as a restart's new baseline:
+        // dropping a loop's turn each time left the heading behind the robot with every turn.
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, Double.NaN, false, DT);
+        double gyro = 0.0;
+        for (int i = 1; i <= 600; i++) {                      // 1800 degrees: five full turns
+            gyro += 3.0;
+            boolean blank = i % 5 == 3;
+            t.setBlankRead(blank);
+            t.update(blank ? 0.0 : wrap(gyro), !blank, Double.NaN, false, DT);
+        }
+        assertEquals(wrap(gyro), t.heading(), 1e-6, "five turns with blank reads must end where the gyro does");
+    }
+
+    @Test
+    void testABlankReadCoveredByTheBackupIsNotCountedTwice() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, 0.0, true, DT);
+        double h = turnBoth(t, 0.0, 3.0, 20);                       // 60 degrees, backup now trusted
+        for (int i = 0; i < 3; i++) {                               // three blank loops; the backup stands in
+            h += 3.0;
+            t.setBlankRead(true);
+            t.update(0.0, false, wrap(h), true, DT);
+        }
+        t.setBlankRead(false);
+        h += 3.0;
+        t.update(wrap(h), true, wrap(h), true, DT);
+        assertEquals(h, t.heading(), 1e-6);
+    }
+
+    @Test
+    void testALongBlankStretchIsARestartNotABridge() {
+        // Longer than a failed read could be: the Pinpoint restarted and comes back re-zeroed, without ever being
+        // seen CALIBRATING. Its first reading is a new baseline, even though it happens to be close to the old one.
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(0.0, true, Double.NaN, false, DT);
+        double h = 0.0;
+        for (int i = 0; i < 10; i++) {
+            h += 1.0;
+            t.update(wrap(h), true, Double.NaN, false, DT);
+        }
+        int loops = (int) Math.ceil(iamyou.MAX_BLANK_GAP_SEC / DT) + 1;
+        for (int i = 0; i < loops; i++) {
+            t.setBlankRead(true);
+            t.update(0.0, false, Double.NaN, false, DT);
+        }
+        t.setBlankRead(false);
+        t.update(2.0, true, Double.NaN, false, DT);                 // re-zeroed reading, not an 8-degree turn
+        t.update(3.0, true, Double.NaN, false, DT);
+        assertEquals(11.0, t.heading(), 1e-6);
+    }
+
+    @Test
+    void testABlankReadFollowedByAReZeroedReadingStartsANewBaseline() {
+        iamyou.HeadingTracker t = new iamyou.HeadingTracker();
+        t.update(90.0, true, Double.NaN, false, DT);
+        t.setBlankRead(true);
+        t.update(0.0, false, Double.NaN, false, DT);
+        t.setBlankRead(false);
+        t.update(-90.0, true, Double.NaN, false, DT);               // 180 degrees in two loops: not a turn
+        t.update(-87.0, true, Double.NaN, false, DT);
+        assertEquals(3.0, t.heading(), 1e-6);
+    }
+
+    @Test
     void testStandingStillTheHeadingIgnoresDrift() {
         iamyou.HeadingTracker t = new iamyou.HeadingTracker();
         t.update(0.0, true, Double.NaN, false, DT, true);

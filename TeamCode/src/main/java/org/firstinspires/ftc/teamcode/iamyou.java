@@ -65,7 +65,7 @@ import java.util.List;
  *   X / B ............... alliance: X = BLUE, B = RED. Aiming stays off until one is picked.
  *   Each intake servo's direction for intake and for outtake is set separately (LEFT_SERVO_* / RIGHT_SERVO_*).
  */
-@TeleOp(name = "I AM YOU (1 controller)")
+@TeleOp(name = "I AM YOU (2 controllers)")
 public class iamyou extends LinearOpMode {
 
     // ---- Hardware names ----
@@ -138,7 +138,7 @@ public class iamyou extends LinearOpMode {
 
     /** True = gamepad 2 runs the intake and outtake while gamepad 1 only drives. */
     protected boolean twoControllers() {
-        return false;
+        return true;
     }
     boolean toggleAprilTagAdjust = false;
 
@@ -344,6 +344,8 @@ public class iamyou extends LinearOpMode {
 
             // Zero heading at the moment of start: the robot's current front is NORTH.
             headingTracker.zero();
+            // The Pinpoint's own heading count at the last zero, for the "pinpoint own" telemetry total.
+            double pinpointRawAtZero = pinpoint != null ? pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES) : 0.0;
 
             ElapsedTime loopTimer = new ElapsedTime();
             ElapsedTime currentTimer = new ElapsedTime();
@@ -372,6 +374,9 @@ public class iamyou extends LinearOpMode {
                 // Options button: re-zero so the robot's current front becomes NORTH. Once per press.
                 if (gamepad1.options && !lastOptions) {
                     headingTracker.zero();
+                    if (pinpoint != null) {
+                        pinpointRawAtZero = pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES);
+                    }
                 }
                 lastOptions = gamepad1.options;
 
@@ -392,6 +397,7 @@ public class iamyou extends LinearOpMode {
                         imu.resetYaw();
                     }
                     headingTracker.fullReset();
+                    pinpointRawAtZero = 0.0;
                     resetPending = false;
                     calibratingSeconds = 0.0;
                     calibrating = pinpoint != null;
@@ -580,7 +586,11 @@ public class iamyou extends LinearOpMode {
                 telemetry.addData("Driver Position", driverPosition + "  (D-pad)");
                 telemetry.addData("Sensors", headingTracker.sensorReport());
                 if (pinpoint != null) {
-                    telemetry.addData("Pinpoint", pinpoint.getDeviceStatus());
+                    // The Pinpoint's own turn count since the last zero, without PINPOINT_TURN_SCALE. If it matches
+                    // "main" divided by the scale, no turn was lost; if it is bigger, the tracker lost loops.
+                    // Meaningless after a Pinpoint restart (it counts from 0 again).
+                    telemetry.addData("Pinpoint", "%s  own %.1f", pinpoint.getDeviceStatus(),
+                            pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES) - pinpointRawAtZero);
                 }
                 if (!hasHeading) {
                     telemetry.addData("IMU", imuStatus);
@@ -1227,6 +1237,11 @@ public class iamyou extends LinearOpMode {
     //    only another value (a velocity) was bad, so the next reading's change from the last one is exactly the turn
     //    made meanwhile and is counted. Treating it as a gap threw that turn away on every bad read, and the turn
     //    scale measured with the turns missing (4 % "under-read") then over-counted every turn the robot made.
+    //  - A blank read (firmware v3+: a failed I2C read arrives as zeros, so status NOT_READY and heading 0; the
+    //    driver's own check does not catch it) is a short gap, not a restart. When the next good reading continues
+    //    from the last one, the turn across the gap is counted (less whatever the backup already stood in for).
+    //    Taking it as a new baseline lost a loop's turn at every failed read, always in the direction of the turn,
+    //    so the heading fell further behind the robot with every turn and the drive slowly rotated wrong.
     //  - A loop where the Pinpoint is frozen (restarting or calibrating: it re-zeros) or turns faster than any robot
     //    can uses the Control Hub IMU's turn instead - once the
     //    IMU has been seen to turn the same way and by the same amount as the Pinpoint. A backup that turns the other
@@ -1260,11 +1275,13 @@ public class iamyou extends LinearOpMode {
      *  3. Read the Sensors line: "main" should say 3600 (or -3600), "backup" the same.
      *  4. Set the scale to 3600 / |reading|, e.g. main 3528 -> PINPOINT_TURN_SCALE = 3600 / 3528.0 = 1.0204.
      */
-    // 2026-11-08 measured 3453 for ten turns, but that run threw away the turn of every bad-read loop (see HEADING),
-    // so it measured the lost loops, not the gyro. The Pinpoint's gyro is calibrated at the factory: 1.0 until the
-    // spin test is redone with this code, with "glitches 0" on the Sensors line (any glitch spoils the run).
-    static final double PINPOINT_TURN_SCALE = 1.0;
-    static final double HUB_IMU_TURN_SCALE = 1.0;
+    // 2026-11-08: 3453 for ten turns (4.1 % short), with bad and blank reads still losing turn.
+    // 2026-11-13: twelve turns, blank reads bridged: main 4154.2 (3.8 % short), backup 4283.9 (0.8 % short) for 4320.
+    // The Pinpoint is short by the same amount both times, so it is its scale, not lost loops. (A gyro tilted 16
+    // degrees off level would also read 3.8 % short: check the INIT Level Check line with DEBUG_TELEMETRY.)
+    // The Sensors line's "pinpoint own" total tells the two apart: it is the Pinpoint's own count, unscaled.
+    static final double PINPOINT_TURN_SCALE = 4320.0 / 4154.2;
+    static final double HUB_IMU_TURN_SCALE = 4320.0 / 4283.9;
 
     /** A wheel slower than this (encoder ticks/sec) counts as stopped when deciding the robot is standing still. */
     static final double STILL_WHEEL_TICKS_PER_SEC = 15.0;
@@ -1292,6 +1309,13 @@ public class iamyou extends LinearOpMode {
      * allows for that time too, up to this much.
      */
     static final double MAX_HELD_READING_SEC = 0.5;
+    /**
+     * A failed I2C read of a Pinpoint on firmware v3 or later comes back as all zeros, and the SDK driver passes it
+     * on as status NOT_READY with heading 0: a blank loop, not a restart. If the next good reading continues from the
+     * last one within this long, the turn made across the blank is counted. A real restart takes longer and passes
+     * through CALIBRATING, so it is never bridged.
+     */
+    static final double MAX_BLANK_GAP_SEC = 0.15;
     /** How much the robot must have turned, by both sensors, before the backup's agreement is judged. */
     static final double BACKUP_TRUST_AFTER_DEG = 45.0;
     /** The backup is trusted while its turns are this close to the main sensor's (1.0 = identical, same way round). */
@@ -1310,6 +1334,12 @@ public class iamyou extends LinearOpMode {
         private double primaryHeldSeconds = 0.0;
         /** True when this loop's main reading is a bad read (FAULT_BAD_READ). Set before update(). */
         private boolean badRead = false;
+        /** True when this loop's main reading is a blank failed read (NOT_READY, heading 0). Set before update(). */
+        private boolean blankRead = false;
+        /** The current gap in the main sensor: how long, whether it is only blank reads, and the backup used in it. */
+        private double gapSeconds = 0.0;
+        private boolean gapBridgeable = false;
+        private double backupUsedInGap = 0.0;
         private double lastBackup = Double.NaN;
         /** True after a loop the main sensor was frozen: its next reading starts a new baseline, it is not a turn. */
         private boolean primaryGap = false;
@@ -1363,10 +1393,12 @@ public class iamyou extends LinearOpMode {
                 primaryScale = PINPOINT_TURN_SCALE;
                 backupScale = HUB_IMU_TURN_SCALE;
                 badRead = status == GoBildaPinpointDriver.DeviceStatus.FAULT_BAD_READ;
+                blankRead = status == GoBildaPinpointDriver.DeviceStatus.NOT_READY;
                 return update(signed(pinpoint.getHeading(AngleUnit.DEGREES), PINPOINT_HEADING_REVERSED),
                         freshHeading(status), imuYaw, imuRead, dtSeconds);
             }
             primaryScale = HUB_IMU_TURN_SCALE;
+            blankRead = false;
             return update(imuYaw, imuRead, Double.NaN, false, dtSeconds);
         }
 
@@ -1405,8 +1437,21 @@ public class iamyou extends LinearOpMode {
             // nothing) already stood in for the motion it missed, and adding its catch-up would count it twice.
             double primaryTurn = fresh && !primaryGap ? turn(lastPrimary, primaryDeg) * primaryScale : Double.NaN;
             boolean primaryOk = !Double.isNaN(primaryTurn) && Math.abs(primaryTurn) <= primaryLimit;
+            // Except after a short gap of blank reads only: the Pinpoint never stopped measuring, so a reading that
+            // continues from the last good one carries the turn made across the gap. Dropping it (as a restart's
+            // new baseline would) loses a loop's turn at every failed read, always the way the robot was turning.
+            boolean bridged = false;
+            if (fresh && primaryGap && gapBridgeable && gapSeconds + dt <= MAX_BLANK_GAP_SEC) {
+                double across = turn(lastPrimary, primaryDeg) * primaryScale;
+                if (!Double.isNaN(across)
+                        && Math.abs(across) <= MAX_TURN_RATE_DEG_PER_SEC * (gapSeconds + dt) + TURN_JUMP_SLACK_DEG) {
+                    primaryTurn = across;
+                    primaryOk = true;
+                    bridged = true;
+                }
+            }
 
-            if (primaryOk && backupOk && Math.abs(primaryTurn) >= BACKUP_JUDGE_MIN_TURN_DEG) {
+            if (primaryOk && !bridged && backupOk && Math.abs(primaryTurn) >= BACKUP_JUDGE_MIN_TURN_DEG) {
                 sumPrimarySquared += primaryTurn * primaryTurn;
                 sumPrimaryTimesBackup += primaryTurn * backupTurn;
                 judgedTurn += Math.abs(primaryTurn);
@@ -1416,7 +1461,8 @@ public class iamyou extends LinearOpMode {
             double turned = 0.0;
             boolean measured = false;
             if (primaryOk) {
-                turned = primaryTurn;
+                // A bridged turn includes what the backup already stood in for during the gap: only the rest is new.
+                turned = bridged ? primaryTurn - backupUsedInGap : primaryTurn;
                 measured = true;
                 primarySinceZero += primaryTurn;
             } else if (backupOk && !hasPrimary && Double.isNaN(lastPrimary)) {
@@ -1470,7 +1516,18 @@ public class iamyou extends LinearOpMode {
                 lastPrimary = primaryDeg;
                 primaryGap = false;
             } else if (!firstPrimary) {
+                if (!primaryGap) {
+                    // A gap begins. It can be bridged only if it began with a good reading to continue from.
+                    gapSeconds = 0.0;
+                    gapBridgeable = true;
+                    backupUsedInGap = 0.0;
+                }
                 primaryGap = true;
+                gapSeconds += dt;
+                gapBridgeable = gapBridgeable && blankRead;
+                if (usedBackup) {
+                    backupUsedInGap += turned;
+                }
             }
             if (hasBackup && backupHealthy) {
                 lastBackup = backupDeg;
@@ -1533,6 +1590,11 @@ public class iamyou extends LinearOpMode {
             this.badRead = badRead;
         }
 
+        /** For tests: says the next main reading is a blank read (NOT_READY), as update(pinpoint, imu) does. */
+        void setBlankRead(boolean blankRead) {
+            this.blankRead = blankRead;
+        }
+
         /** For tests: the turn scales update(pinpoint, imu) would take from the constants. */
         void setScales(double primary, double backup) {
             primaryScale = primary;
@@ -1557,6 +1619,9 @@ public class iamyou extends LinearOpMode {
             backupSinceZero = 0.0;
             lastPrimary = Double.NaN;
             primaryHeldSeconds = 0.0;
+            gapSeconds = 0.0;
+            gapBridgeable = false;
+            backupUsedInGap = 0.0;
             lastBackup = Double.NaN;
             primaryGap = true;
             backupGap = true;
