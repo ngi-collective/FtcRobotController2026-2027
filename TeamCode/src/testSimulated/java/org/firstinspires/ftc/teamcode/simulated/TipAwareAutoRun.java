@@ -40,14 +40,14 @@ final class TipAwareAutoRun {
     private static final double METRES_PER_INCH = 0.0254;
 
     // Start squares in the field frame, from AllianceAuto's Pedro poses (pedro = field + 72 in).
-    static final Pose2d RED_FRONT = pedro(56.0, 9.5, 90.0);
-    static final Pose2d RED_REAR = pedro(62.0, 134.5, 270.0);
-    static final Pose2d BLUE_FRONT = pedro(88.0, 134.5, 270.0);
-    static final Pose2d BLUE_REAR = pedro(82.0, 9.5, 90.0);
+    static final Pose2d RED_FRONT = pedro(56.0, 9.5, 270.0);
+    static final Pose2d RED_REAR = pedro(62.0, 134.5, 90.0);
+    static final Pose2d BLUE_FRONT = pedro(88.0, 134.5, 90.0);
+    static final Pose2d BLUE_REAR = pedro(82.0, 9.5, 270.0);
 
     // Where each shoots from: the start it is on, or the other side's spot.
-    static final Pose2d RED_SHOOT = pedro(56.0, 10.5, 90.0);
-    static final Pose2d BLUE_SHOOT = pedro(88.0, 133.5, 270.0);
+    static final Pose2d RED_SHOOT = pedro(56.0, 10.5, 270.0);
+    static final Pose2d BLUE_SHOOT = pedro(88.0, 133.5, 90.0);
 
     /** How far from its shooting spot, in metres, the robot may be when it shoots. */
     private static final double SPOT_TOLERANCE = 0.08;

@@ -39,9 +39,9 @@ class SimulatedCameraWiringTest {
         FakeWebcam webcam = hardware.webcam("Webcam 1");
         assertNotNull(webcam.frameSource());
 
-        // About 0.9 m short of the red HIVE's raised CELL, facing it; verity.json tilts the
-        // camera 45 degrees up, which frames plates hanging 4 feet up from here.
-        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(90.0)));
+        // About 0.9 m short of the red HIVE's raised CELL, back to it; verity.json puts the camera
+        // on the back tilted 45 degrees up, which frames plates hanging 4 feet up from here.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(270.0)));
 
         SyntheticFrame frame = new SyntheticFrame(640, 480);
         webcam.frameSource().render(frame);
@@ -97,12 +97,12 @@ class SimulatedCameraWiringTest {
         FakeHardwareMap hardware = robotLookingAt("aimed-shot");
         SyntheticFrame frame = new SyntheticFrame(640, 480);
 
-        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(90.0)));
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(270.0)));
         hardware.webcam("Webcam 1").frameSource().render(frame);
         double facingTheTags = darkFraction(frame);
 
-        // Same spot, nose at the far wall: the camera looks away from the CELL.
-        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(-90.0)));
+        // Same spot, nose at the CELL: the camera on the back looks away from it.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(90.0)));
         hardware.webcam("Webcam 1").frameSource().render(frame);
         double facingAway = darkFraction(frame);
 

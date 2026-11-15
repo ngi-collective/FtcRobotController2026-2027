@@ -41,7 +41,9 @@ public class FlywheelPIDFTuning extends OpMode {
     private int stepIndex = 1;
     private double volts = iamyou.FLYWHEEL_NOMINAL_VOLTS;
     private double peakError = 0.0;
-    CRServo staging;
+    private StagingGate staging;
+    /** B latches this on; it feeds only while the gate is open. */
+    private boolean feeding = false;
 
     @Override
     public void init() {
@@ -51,8 +53,9 @@ public class FlywheelPIDFTuning extends OpMode {
         flywheel.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         battery = hardwareMap.voltageSensor.iterator().hasNext() ? hardwareMap.voltageSensor.iterator().next() : null;
-        staging = hardwareMap.get(CRServo.class, "Staging");
-        staging.setDirection(DcMotorSimple.Direction.REVERSE);
+        CRServo stagingServo = hardwareMap.get(CRServo.class, "Staging");
+        stagingServo.setDirection(DcMotorSimple.Direction.REVERSE);
+        staging = new StagingGate(stagingServo, flywheel);
         telemetry.addLine("Init complete. A = flywheel on/off.");
     }
 
@@ -86,7 +89,7 @@ public class FlywheelPIDFTuning extends OpMode {
             adjust(-STEPS[stepIndex]);
         }
         if (gamepad1.bWasPressed()){
-            staging.setPower(1);
+            feeding = true;
         }
 
         if (battery != null) {
@@ -100,6 +103,8 @@ public class FlywheelPIDFTuning extends OpMode {
         double velocity = flywheel.getVelocity();
         double power = pidf.update(wanted, velocity, volts, dt);
         flywheel.setPower(power);
+        staging.setFlywheelTarget(wanted);
+        staging.setPower(feeding ? 1.0 : 0.0);
         if (on) {
             peakError = Math.max(peakError, Math.abs(pidf.error()));
         }
@@ -121,6 +126,7 @@ public class FlywheelPIDFTuning extends OpMode {
     @Override
     public void stop() {
         flywheel.setPower(0.0);
+        staging.setPower(0.0);
     }
 
     private void adjust(double step) {

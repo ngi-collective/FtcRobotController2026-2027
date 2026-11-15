@@ -31,7 +31,8 @@ import java.util.List;
  * The AUTOs all four starts share. {@link Routine#FULL}: shoot the pre-loads, sweep the alliance's
  * GARDEN along its length, shoot again, then PARK in the LOADING ZONE. One collection per shot,
  * and the FLOWER trip that would come next does not fit in 30 s, so it is left out. {@link Routine#PRELOAD_AND_PARK}: shoot the
- * pre-loads and PARK; a Right start waits 15 s first. The OpMode ends when the routine does.
+ * pre-loads and PARK; a Right start waits 15 s first. {@link Routine#PARK}: PARK at once, without
+ * shooting. The OpMode ends when the routine does.
  *
  * <h2>Frame</h2>
  *
@@ -40,6 +41,9 @@ import java.util.List;
  * {@code y = 0}. The interior is 141&nbsp;in, not 144 ({@code robot-config/field.json}), so the
  * walls are at 1.5 and 142.5. Every pose below is written for red; blue is the same route turned
  * half a turn about the field's centre, which is the field's own symmetry.</p>
+ *
+ * <p>The intake is on the front and the flywheel and camera on the back, so a robot shooting has
+ * its back to the HIVE and a robot collecting drives intake first.</p>
  *
  * <h2>Where things are, for red (manual figure 9-2)</h2>
  *
@@ -60,9 +64,9 @@ public abstract class AllianceAuto extends LinearOpMode {
 
     /** Where this OpMode is set down, which decides whether it must first drive to its shot. */
     public enum Start {
-        /** Against the audience wall facing the raised CELL: the first shot is from here. */
+        /** Against the audience wall, back to the raised CELL: the first shot is from here. */
         FACING_RAISED_CELL,
-        /** Against the rear wall facing the lowered CELL: it drives round the HIVE to shoot. */
+        /** Against the rear wall, back to the lowered CELL: it drives round the HIVE to shoot. */
         BEHIND_LOWERED_CELL
     }
 
@@ -75,7 +79,9 @@ public abstract class AllianceAuto extends LinearOpMode {
          * A Right start first waits {@link #PRELOAD_RIGHT_DELAY_MS}, leaving the field to its
          * partner.
          */
-        PRELOAD_AND_PARK
+        PRELOAD_AND_PARK,
+        /** Drive straight to the LOADING ZONE and PARK, firing nothing, from either start. */
+        PARK
     }
 
     /** Blue's starts and paths are red's turned half a turn about the field's centre. */
@@ -85,30 +91,36 @@ public abstract class AllianceAuto extends LinearOpMode {
     // Red poses. A chassis is 15.75 in long and 15 in wide, so its centre is 7.9 in off a wall it
     // backs onto and 7.5 in off one it is side-on to; turning in place needs 10.9 in of room.
 
-    /** Against the audience wall, facing the raised CELL: RedLeft's start and its first shot. */
-    static final double[] FRONT_START = {56.0, 9.5, 90.0};
+    /**
+     * Against the audience wall, intake to it and back to the raised CELL: RedLeft's start and its
+     * first shot.
+     */
+    static final double[] FRONT_START = {56.0, 9.5, 270.0};
 
     /**
      * Where a drive back to the audience-side shot ends: an inch off the wall, so a path can
      * finish without driving into it. The shot itself is taken from {@link #FRONT_WALL_SHOT}.
      */
-    static final double[] SHOOT = {56.0, 10.5, 90.0};
+    static final double[] SHOOT = {56.0, 10.5, 270.0};
 
     /**
      * Every audience-side shot is taken here: 0.4 in inside the wall, so the follower holds the
      * chassis pressed against it rather than balancing an inch off it. The wall, not the
      * controller, then fixes the range and the heading for the shot.
      */
-    static final double[] FRONT_WALL_SHOT = {56.0, 9.0, 90.0};
+    static final double[] FRONT_WALL_SHOT = {56.0, 9.0, 270.0};
 
     /** The same against the rear wall, behind {@link #REAR_START}. */
-    static final double[] REAR_WALL_SHOT = {62.0, 135.0, 270.0};
+    static final double[] REAR_WALL_SHOT = {62.0, 135.0, 90.0};
 
-    /** Against the rear wall facing the lowered CELL, clear of the rear-wall FLOWER at x 48.6. */
-    static final double[] REAR_START = {62.0, 134.5, 270.0};
+    /**
+     * Against the rear wall, intake to it and back to the lowered CELL, clear of the rear-wall
+     * FLOWER at x 48.6.
+     */
+    static final double[] REAR_START = {62.0, 134.5, 90.0};
 
     /** Far enough off the rear wall and the FLOWER to turn, and left of the HIVE frame. */
-    static final double[] REAR_CLEAR = {40.0, 116.0, 270.0};
+    static final double[] REAR_CLEAR = {40.0, 116.0, 90.0};
 
     /**
      * Facing the red wall at the GARDEN's open end, side 2 in off the audience wall.
@@ -140,7 +152,7 @@ public abstract class AllianceAuto extends LinearOpMode {
      * quarter turn: turning while crossing the field slowed the path until it timed out short, and
      * a half turn in place took longer than the AUTO had left.
      */
-    static final double[] PARK_APPROACH = {14.0, 108.0, 90.0};
+    static final double[] PARK_APPROACH = {14.0, 108.0, 270.0};
 
     /**
      * The final PARK: the same spot turned in place, intake facing away from the alliance wall and
@@ -265,7 +277,7 @@ public abstract class AllianceAuto extends LinearOpMode {
         firstShotFront = firstShot != rearStart;
         frontWallShot = pose(alliance, FRONT_WALL_SHOT);
         rearWallShot = pose(alliance, REAR_WALL_SHOT);
-        // A pre-load routine shoots from where it was set down and parks from there.
+        // A pre-load or park-only routine parks from where it was set down.
         Pose lastShot = routine == Routine.FULL ? shoot : start;
 
         // Straight off the rear wall first, so the turn happens away from it and the FLOWER.
@@ -307,8 +319,10 @@ public abstract class AllianceAuto extends LinearOpMode {
             steps.add(drive(leaveRearWall));
             steps.add(drive(aroundHive, AROUND_HIVE_TIMEOUT_MS));
         }
-        steps.add(mark("shooting the pre-loads"));
-        steps.add(shoot(firstShotFront));
+        if (routine != Routine.PARK) {
+            steps.add(mark("shooting the pre-loads"));
+            steps.add(shoot(firstShotFront));
+        }
         if (routine == Routine.FULL) {
             addCollectAndShoot(steps);
         }

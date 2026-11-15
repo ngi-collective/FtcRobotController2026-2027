@@ -28,10 +28,10 @@
   },
   "camera": {
     "name": "Webcam 1",
-    "forwardMetres": 0.16,
+    "forwardMetres": -0.16,
     "leftMetres": 0.0,
     "heightMetres": 0.3175,
-    "yawDegrees": 0.0,
+    "yawDegrees": 180.0,
     "pitchDegrees": 45.0,
     "rollDegrees": 0.0,
     "framesPerSecond": 30.0
@@ -50,10 +50,10 @@
       "wheelRadiusMetres": 0.0508,
       "transferEfficiency": 0.5,
       "spinUpSeconds": 1.2,
-      "exitYawDegrees": 0.0,
+      "exitYawDegrees": 180.0,
       "exitPitchDegrees": 75.0,
       "mouth": {
-        "forwardMetres": 0.24,
+        "forwardMetres": -0.24,
         "leftMetres": 0.0,
         "heightMetres": 0.06,
         "lengthMetres": 0.06,

@@ -37,7 +37,7 @@ import java.util.List;
  *   Control Hub I2C bus 0 ... imu (the hub's built-in IMU; the only heading source, there is no odometry)
  *   USB ..................... Webcam 1 (looks forward, tilted 45 degrees up at the CELLs' tags; optional, aiming is off without it)
  *
- * Driver controls (gamepad 1):
+ * Driver controls (gamepad 1; in the two-controller version the D-pad, Start and logo buttons are on gamepad 2):
  *   Left stick .......... drive (field-centric)
  *   Right stick X ....... turn
  *   Left trigger ........ slow mode
@@ -52,7 +52,7 @@ import java.util.List;
  *                         IMU and all drift/glitch history. Waits until the robot is stopped, then the drive is
  *                         off for about a quarter second while the gyro recalibrates.
  *
- * Mechanism controls (gamepad 1 in this version, gamepad 2 in the two-controller version):
+ * Mechanism controls (gamepad 1 in both versions):
  *   Right trigger ....... intake (hold). Fixed speed, however far the trigger is pulled.
  *   Right bumper ........ outtake / poop out (hold; wins over the trigger). Intake motor and Staging run backwards.
  *   Left bumper ......... flywheel ON/OFF (press to toggle). Holds FLYWHEEL_TARGET_TPS with velocity PIDF; the
@@ -135,9 +135,14 @@ public class iamyou extends LinearOpMode {
     private final HeadingTracker headingTracker = new HeadingTracker();
     private final DriveCheck driveCheck = new DriveCheck();
 
-    /** True = gamepad 2 runs the intake and outtake while gamepad 1 only drives. */
+    /** True = gamepad 2 picks the driver position and resets the heading; gamepad 1 does everything else. */
     protected boolean twoControllers() {
         return true;
+    }
+
+    /** The gamepad that picks the driver position and resets the heading. */
+    private Gamepad setupPad() {
+        return twoControllers() ? gamepad2 : gamepad1;
     }
     boolean toggleAprilTagAdjust = false;
 
@@ -258,6 +263,9 @@ public class iamyou extends LinearOpMode {
         // motor is put back in plain power mode, so the wheel coasts down instead of being braked to zero.
         shootCommand.configure(outtake);
         outtake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        // Staging is only ever driven through this, so it cannot feed a flywheel off its target speed.
+        StagingGate stagingGate = new StagingGate(staging, outtake);
+        boolean stagingRefused = false;
         boolean flywheelVelocityMode = false;
         // Coast to a stop: braking a spinning flywheel hard is a shock load on the motor and gears.
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
@@ -289,8 +297,8 @@ public class iamyou extends LinearOpMode {
         // the turn is mixed into the drive, so this handle is never driven directly.
         DriveHardware driveHardware = DriveHardware.initWithoutEncoders(hardwareMap);
 
-        // Whoever runs the intake and outtake: the driver, or a second operator.
-        Gamepad mech = twoControllers() ? gamepad2 : gamepad1;
+        // Whoever picks the driver position and resets the heading: the driver, or a second operator.
+        Gamepad setup = setupPad();
 
         DriverPosition driverPosition = DriverPosition.SOUTH;
         // null until the driver picks one; a ball in the other alliance's CELL scores for them, so there is no default.
@@ -369,21 +377,21 @@ public class iamyou extends LinearOpMode {
                 loopTimer.reset();
 
                 // Options button: re-zero so the robot's current front becomes NORTH. Once per press.
-                if (gamepad1.options && !lastOptions) {
+                if (setup.options && !lastOptions) {
                     headingTracker.zero();
                     if (pinpoint != null) {
                         pinpointRawAtZero = pinpoint.getHeading(UnnormalizedAngleUnit.DEGREES);
                     }
                 }
-                lastOptions = gamepad1.options;
+                lastOptions = setup.options;
 
                 // Logitech logo button (guide): FULL heading reset. Waits for the robot to stop, because the Pinpoint
                 // recalibrates its gyro and a moving robot would calibrate in a wrong drift. Then the drive stays off
                 // until the Pinpoint is READY again (about a quarter second).
-                if (gamepad1.guide && !lastGuide) {
+                if (setup.guide && !lastGuide) {
                     resetPending = true;
                 }
-                lastGuide = gamepad1.guide;
+                lastGuide = setup.guide;
                 boolean robotStopped = wheelsStill(wheels) && !sticksTouched(gamepad1);
                 stoppedSeconds = robotStopped ? stoppedSeconds + dt : 0.0;
                 if (resetPending && stoppedSeconds >= FULL_RESET_STILL_SEC) {
@@ -468,7 +476,7 @@ public class iamyou extends LinearOpMode {
                 // actually did. Field-centric only works when all three agree, however good the heading is.
                 double headingRate = dt > 0 ? AngleUnit.normalizeDegrees(heading - lastCheckedHeading) / dt : 0.0;
                 lastCheckedHeading = heading;
-                if (!aiming && !(gamepad1.options)) {
+                if (!aiming && !(setup.options)) {
                     double measuredForward = Double.NaN;
                     double measuredLeft = Double.NaN;
                     if (pinpoint != null) {
@@ -513,7 +521,7 @@ public class iamyou extends LinearOpMode {
                     currentTimer.reset();
                 }
                 IntakeResult intakeResult = intakeLogic.update(
-                        mech.right_trigger, mech.right_bumper, intakeAmps, dt);
+                        gamepad1.right_trigger, gamepad1.right_bumper, intakeAmps, dt);
                 intake.setPower(intakeResult.power);
                 // The servos run whenever the motor runs, at the same speed as each other. Positive motor power =
                 // intaking, negative = outtaking (or clearing a jam); each servo has its own direction for each.
@@ -527,20 +535,11 @@ public class iamyou extends LinearOpMode {
                 // Staging feeds forward on intake and backward on outtake, with the intake motor.
                 double stagingPower = Math.max(-1.0, Math.min(1.0, intakeResult.power));
 
-                //seperate staging from intake (because why not????)
-                if (mech.a){
-                    staging.setPower(1.0);
-                }else if (mech.b){
-                    staging.setPower(-1.0);
-                }else{
-                    staging.setPower(0.0);
-                }
-
                 lastIntakePower = intakeResult.power;
 
                 // ---- Flywheel ----
                 double flywheelTicksPerSec = outtake.getVelocity();
-                double flywheelTarget = outtakeLogic.update(mech.left_bumper, flywheelTicksPerSec, dt);
+                double flywheelTarget = outtakeLogic.update(gamepad1.left_bumper, flywheelTicksPerSec, dt);
                 if (flywheelTarget > 0.0) {
                     if (!flywheelVelocityMode) {
                         outtake.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
@@ -554,9 +553,21 @@ public class iamyou extends LinearOpMode {
                     }
                     outtake.setPower(0.0);
                 }
+                stagingGate.setFlywheelTarget(flywheelTarget);
+
+                // ---- Staging ----
+                // Separate from the intake. A feeds, but only while the flywheel is at 96-100% of its target (see
+                // StagingGate); B backs balls away from the flywheel and always runs.
+                if (gamepad1.a) {
+                    stagingRefused = !stagingGate.setPower(1.0);
+                } else if (gamepad1.b) {
+                    stagingRefused = !stagingGate.setPower(-1.0);
+                } else {
+                    stagingRefused = !stagingGate.setPower(0.0);
+                }
                 boolean flywheelReady = outtakeLogic.isReady();
                 if (flywheelReady && !wasReady) {
-                    mech.rumble(200);
+                    gamepad1.rumble(200);
                 }
                 wasReady = flywheelReady;
 
@@ -576,7 +587,8 @@ public class iamyou extends LinearOpMode {
                 telemetry.addData("Intake", "%s  power %.2f  %.1f A",
                         intakeResult.state, intakeResult.power, intakeAmps);
                 telemetry.addData("Intake Servos L | R", "%.2f | %.2f", leftServo, rightServo);
-                telemetry.addData("Staging", "%.2f", staging.getPower());
+                telemetry.addData("Staging", "%.2f%s", stagingGate.getPower(),
+                        stagingRefused ? "  LOCKED: flywheel not at speed" : "");
                 telemetry.addData("Slow Mode", result.slowMode ? "ON" : "OFF");
                 telemetry.addData("Stop Assist", result.braking ? "BRAKING" : "off");
                 telemetry.addLine("--- heading ---");
@@ -787,10 +799,11 @@ public class iamyou extends LinearOpMode {
     }
 
     private DriverPosition readDriverPosition(DriverPosition current) {
-        if (gamepad1.dpad_up)    return DriverPosition.NORTH;
-        if (gamepad1.dpad_down)  return DriverPosition.SOUTH;
-        if (gamepad1.dpad_left)  return DriverPosition.WEST;
-        if (gamepad1.dpad_right) return DriverPosition.EAST;
+        Gamepad pad = setupPad();
+        if (pad.dpad_up)    return DriverPosition.NORTH;
+        if (pad.dpad_down)  return DriverPosition.SOUTH;
+        if (pad.dpad_left)  return DriverPosition.WEST;
+        if (pad.dpad_right) return DriverPosition.EAST;
         return current;
     }
 

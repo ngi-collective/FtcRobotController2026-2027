@@ -151,15 +151,15 @@ public class IamYouHeadlessTest {
         await(() -> harness.lastTelemetry().stream().anyMatch(line -> line.startsWith("Aim : ")),
                 () -> "the OpMode never reached its main loop; last telemetry was " + harness.lastTelemetry());
 
-        // About 0.9 m short of red's raised CELL and fifteen degrees clockwise of it, well inside the 0.46-2 m band
-        // the forward, 45-degree camera frames the cluster in.
-        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(75.0)));
-        // Flywheel on (gamepad 2, the operator's), and X on gamepad 1 to turn the aimer on: both toggles, so press and let go.
-        harness.gamepad2().left_bumper = true;
+        // About 0.9 m short of red's raised CELL, back to it and fifteen degrees clockwise of it, well inside the
+        // 0.46-2 m band the rear, 45-degree camera frames the cluster in.
+        hardware.drive().setPose(new Pose2d(-0.324, -1.30, Math.toRadians(255.0)));
+        // Flywheel on and X to turn the aimer on, both on gamepad 1: both toggles, so press and let go.
+        harness.gamepad1().left_bumper = true;
         setX(true);
         for (int tick = 0; tick < 500 && !aimSettled(); tick++) {
             if (tick == 5) {
-                harness.gamepad2().left_bumper = false;
+                harness.gamepad1().left_bumper = false;
                 setX(false);
             }
             harness.advance(TICK);
@@ -168,9 +168,10 @@ public class IamYouHeadlessTest {
         }
 
         assertTrue(aimSettled(), "the aimer never settled; last telemetry was " + harness.lastTelemetry());
-        // Red's raised CELL is at x = -0.324 on the HIVE's centre line, so on target is facing straight down +Y.
-        assertEquals(90.0, hardware.drive().pose().headingDegrees(), CellAimer.READY_DEGREES,
-                "the nose should point at the raised CELL");
+        // Red's raised CELL is at x = -0.324 on the HIVE's centre line, so on target is the back facing straight
+        // down +Y: heading 270.
+        assertEquals(0.0, Math.IEEEremainder(hardware.drive().pose().headingDegrees() - 270.0, 360.0),
+                CellAimer.READY_DEGREES, "the back should point at the raised CELL");
     }
 
     private boolean aimSettled() {
@@ -202,10 +203,10 @@ public class IamYouHeadlessTest {
         launchAndStart();
         turnTo(90.0);
 
-        harness.gamepad1().options = true;
+        harness.gamepad2().options = true;
         await(() -> harness.lastTelemetry().contains("Facing (vs start) : NORTH"),
                 () -> "Options never re-zeroed the heading; last was " + harness.lastTelemetry());
-        harness.gamepad1().options = false;
+        harness.gamepad2().options = false;
 
         // Forward now drives the way the robot faces (+Y), not the original start direction.
         Pose2d forward = drive(0.0, -1.0, 0.0f, 0.4);
@@ -217,15 +218,15 @@ public class IamYouHeadlessTest {
     public void operatorTriggerRunsTheIntakeInAndBumperEjects() {
         launchAndStart();
 
-        harness.gamepad2().right_trigger = 1.0f;
+        harness.gamepad1().right_trigger = 1.0f;
         awaitIntakePower(iamyou.INTAKE_POWER);
 
         // Eject wins over a held trigger.
-        harness.gamepad2().right_bumper = true;
+        harness.gamepad1().right_bumper = true;
         awaitIntakePower(-iamyou.EJECT_POWER);
 
-        harness.gamepad2().right_bumper = false;
-        harness.gamepad2().right_trigger = 0.0f;
+        harness.gamepad1().right_bumper = false;
+        harness.gamepad1().right_trigger = 0.0f;
         awaitIntakePower(0.0);
     }
 
@@ -233,7 +234,7 @@ public class IamYouHeadlessTest {
     public void stoppingCutsPowerToEveryWheelAndTheIntake() {
         launchAndStart();
         harness.gamepad1().left_stick_y = -1.0f;
-        harness.gamepad2().right_trigger = 1.0f;
+        harness.gamepad1().right_trigger = 1.0f;
         awaitSteadyWheelPowers();
         awaitIntakePower(iamyou.INTAKE_POWER);
 

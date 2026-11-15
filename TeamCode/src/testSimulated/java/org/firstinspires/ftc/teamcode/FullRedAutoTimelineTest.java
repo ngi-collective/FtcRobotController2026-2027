@@ -8,11 +8,11 @@ import org.junit.jupiter.api.Test;
 class FullRedAutoTimelineTest {
     @Test
     void redLeft() throws Exception {
-        AllianceAutoRun.run(new RedLeft(), 56, 9.5, 90, true);
+        AllianceAutoRun.run(new RedLeft(), 56, 9.5, 270, true);
     }
 
     @Test
     void redRight() throws Exception {
-        AllianceAutoRun.run(new RedRight(), 62, 134.5, 270, true);
+        AllianceAutoRun.run(new RedRight(), 62, 134.5, 90, true);
     }
 }

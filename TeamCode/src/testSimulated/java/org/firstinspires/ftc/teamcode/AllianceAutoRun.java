@@ -32,6 +32,12 @@ final class AllianceAutoRun {
     /** Runs one AUTO from a start square in Pedro inches and checks its timeline. */
     static void run(LinearOpMode auto, double x, double y, double headingDegrees,
                             boolean red) throws Exception {
+        run(auto, x, y, headingDegrees, red, true);
+    }
+
+    /** As above, for a routine that must not shoot when {@code shoots} is false. */
+    static void run(LinearOpMode auto, double x, double y, double headingDegrees,
+                            boolean red, boolean shoots) throws Exception {
         RobotConfig config = SimConfigFiles.robot("verity");
         SimulatedScene scene = BioBuzzScenario.named("match-setup").scene();
         FakeHardwareMap hardware = new VerityRobot(config, FieldConfig.standard(), scene).create();
@@ -65,6 +71,6 @@ final class AllianceAutoRun {
             harness.awaitCompletion(3000);
         }
         System.out.println(auto.getClass().getSimpleName() + "\n  " + timeline.timeline());
-        timeline.assertKeptTheRules(auto.getClass().getSimpleName(), doneAt, red);
+        timeline.assertKeptTheRules(auto.getClass().getSimpleName(), doneAt, red, shoots);
     }
 }

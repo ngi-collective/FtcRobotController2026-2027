@@ -62,7 +62,7 @@ public class SweepAndShootAuto extends LinearOpMode {
     private static final double CELL_OPENING_HEIGHT_METRES = 1.5100;
 
     /**
-     * The start square, in the field frame, facing the HIVE.
+     * The start square, in the field frame, back to the HIVE: the flywheel is on the back.
      *
      * <p>{@code Y} puts the near row of POLLEN just past the bumper and inside the mouth, with the
      * muzzle 0.76&nbsp;m from the opening. {@code X} is far enough to the audience-left of the row
@@ -140,7 +140,7 @@ public class SweepAndShootAuto extends LinearOpMode {
         ShotSolver.Shot farRow = solver.solve(shotFrom(FAR_ROW_Y_METRES), 0.0,
                 CELL_OPENING_HEIGHT_METRES);
 
-        telemetry.addData("start on", "x %.2f  y %.2f  heading 90 (facing the red HIVE)",
+        telemetry.addData("start on", "x %.2f  y %.2f  heading 270 (back to the red HIVE)",
                 START_X_METRES, START_Y_METRES);
         telemetry.addData("scenario", "auto-sweep");
         telemetry.addData("near row", nearRow.toString());
@@ -149,14 +149,16 @@ public class SweepAndShootAuto extends LinearOpMode {
 
         waitForStart();
 
+        // The flywheel is on the back, so the robot stands back to the HIVE: the sweep runs to the
+        // robot's left, which is the field's +x, and the far row is behind it.
         spinUpTo(nearRow);
-        slide(SWEEP_POWER, "sweeping the near row");
+        slide(-SWEEP_POWER, "sweeping the near row");
 
-        // Forward onto the far row, then back the way it came. The wheel stays at speed through
+        // Back onto the far row, then back the way it came. The wheel stays at speed through
         // the nudge: there is nothing in the mouth to throw badly.
-        nudgeForward();
+        nudgeBack();
         command(farRow);
-        slide(-SWEEP_POWER, "sweeping the far row");
+        slide(SWEEP_POWER, "sweeping the far row");
 
         drive.stop();
         flywheel.setVelocity(0.0);
@@ -214,8 +216,8 @@ public class SweepAndShootAuto extends LinearOpMode {
         drive.stop();
     }
 
-    private void nudgeForward() {
-        left.update(0.0, NUDGE_POWER);
+    private void nudgeBack() {
+        left.update(0.0, -NUDGE_POWER);
         right.update(0.0, 0.0);
         drive.setPowers(movement.calculate(left, right));
         hold(NUDGE_SECONDS, "moving up to the far row");
