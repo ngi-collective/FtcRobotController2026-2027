@@ -8,11 +8,11 @@ import org.junit.jupiter.api.Test;
 class PreloadRedAutoTimelineTest {
     @Test
     void redLeftPreload() throws Exception {
-        AllianceAutoRun.run(new RedLeftPreload(), 56, 9.5, 90, true);
+        AllianceAutoRun.run(new RedLeftPreload(), 56, 9.5, 270, true);
     }
 
     @Test
     void redRightPreload() throws Exception {
-        AllianceAutoRun.run(new RedRightPreload(), 62, 134.5, 270, true);
+        AllianceAutoRun.run(new RedRightPreload(), 62, 134.5, 90, true);
     }
 }

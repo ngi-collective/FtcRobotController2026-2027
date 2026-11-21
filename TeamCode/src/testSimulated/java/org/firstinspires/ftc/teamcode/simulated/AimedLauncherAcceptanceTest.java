@@ -103,14 +103,15 @@ public class AimedLauncherAcceptanceTest {
      * otherwise quietly start the test with three balls already in the wheel.</p>
      */
     private static Pose2d firingSpot(RobotConfig config) {
+        // Back to the CELL: the flywheel and camera are on the back.
         return new Pose2d(SHOT_FROM_X, POLLEN_ROW_Y - reachMetres(config) - 0.004,
-                Math.toRadians(90.0));
+                Math.toRadians(270.0));
     }
 
-    /** How far ahead of the robot's centre a ball's surface first touches the mouth. */
+    /** How far behind the robot's centre a ball's surface first touches the mouth. */
     private static double reachMetres(RobotConfig config) {
         VolumeConfig mouth = config.launchers().get("flywheel").mouth();
-        return mouth.forwardMetres() + mouth.lengthMetres() / 2.0
+        return -mouth.forwardMetres() + mouth.lengthMetres() / 2.0
                 + BioBuzzElements.POLLEN_DIAMETER_METRES / 2.0;
     }
 
@@ -177,7 +178,7 @@ public class AimedLauncherAcceptanceTest {
         for (double rolled = CREEP_METRES; rolled < 0.30 && !tipped(hardware);
                 rolled += CREEP_METRES) {
             hardware.drive().setPose(new Pose2d(SHOT_FROM_X, firingSpot(config).y() + rolled,
-                    Math.toRadians(90.0)));
+                    Math.toRadians(270.0)));
             // Long enough for a burst to fly and for the wheel to settle on the speed the new
             // range wants, which is a few rev/min away: a 2 cm roll barely changes a steep lob.
             advanceUntil(harness, 1.0, frame -> tipped(hardware));
@@ -204,7 +205,7 @@ public class AimedLauncherAcceptanceTest {
         // Drive round. The newly raised CELL is RED SCORING, and it ranges just like the other one
         // did: the loop closes again on a target that did not exist a moment ago.
         hardware.drive().setPose(new Pose2d(SHOT_FROM_X, -firingSpot(config).y(),
-                Math.toRadians(-90.0)));
+                Math.toRadians(90.0)));
         List<String> again = advanceUntil(harness, 6.0,
                 frame -> matched(frame, TARGET, BioBuzzField.RED_SCORING));
         System.out.println("from the scoring side: " + again);
@@ -243,7 +244,8 @@ public class AimedLauncherAcceptanceTest {
 
     /** How far ahead of the robot's centre a ball leaves, from the configuration. */
     private static double muzzleForwardMetres() {
-        return SimConfigFiles.robot("verity").launchers().get("flywheel").mouth().forwardMetres();
+        // Negated: the mouth is on the back, and this is its reach out of it.
+        return -SimConfigFiles.robot("verity").launchers().get("flywheel").mouth().forwardMetres();
     }
 
     /** Whether the red HIVE has swung all the way to its other stop. */

@@ -100,8 +100,9 @@ public class CellAimerAcceptanceTest {
         hardware.setPhysics(FieldPhysics.of(scene.elements(), scene.structures(),
                 FieldConfig.standard(), config));
 
-        // Nose at the far wall: the HIVE is behind the robot and the camera sees only ceiling.
-        hardware.drive().setPose(new Pose2d(START_X, START_Y, Math.toRadians(-90.0)));
+        // Back at the far wall: the camera is on the back, so it sees only ceiling and the HIVE
+        // is in front of the robot.
+        hardware.drive().setPose(new Pose2d(START_X, START_Y, Math.toRadians(90.0)));
 
         LinearOpModeHarness harness = OpModeHarness.forLinear(new AimTwice(), hardware);
         harness.launch();
@@ -123,10 +124,10 @@ public class CellAimerAcceptanceTest {
         assertTrue("with no CELL in view the aimer should give up, not spin: " + frame,
                 has(frame, "first : false"));
         assertEquals("and it should have left the robot where it was",
-                -90.0, Math.toDegrees(hardware.drive().pose().heading()), 2.0);
+                90.0, Math.toDegrees(hardware.drive().pose().heading()), 2.0);
 
-        // Fifteen degrees clockwise of the CELL: a counter-clockwise turn to make.
-        hardware.drive().setPose(new Pose2d(START_X, START_Y, Math.toRadians(75.0)));
+        // The back fifteen degrees clockwise of the CELL: a counter-clockwise turn to make.
+        hardware.drive().setPose(new Pose2d(START_X, START_Y, Math.toRadians(255.0)));
         harness.gamepad1().a = true;
 
         frame = advanceUntil(harness, 10.0, "second");
@@ -136,8 +137,11 @@ public class CellAimerAcceptanceTest {
         Pose2d pose = hardware.drive().pose();
         Vec3 cell = clusterOrigin(BioBuzzField.RED_AUDIENCE);
         double bearing = Math.atan2(cell.y() - pose.y(), cell.x() - pose.x());
-        assertEquals("the nose should point at the raised CELL",
-                Math.toDegrees(bearing), Math.toDegrees(pose.heading()), CellAimer.READY_DEGREES);
+        // The back points at it: the heading is the nose's, half a turn from the camera.
+        double backDegrees = Math.toDegrees(pose.heading()) + 180.0;
+        assertEquals("the back should point at the raised CELL", 0.0,
+                Math.IEEEremainder(backDegrees - Math.toDegrees(bearing), 360.0),
+                CellAimer.READY_DEGREES);
     }
 
     private static Vec3 clusterOrigin(String cell) {

@@ -11,6 +11,16 @@ package org.firstinspires.ftc.teamcode;
  * has no checkout. So this is deliberately a second copy, and
  * {@code LaunchGeometryTest} is what keeps the two honest.</p>
  *
+ * <h2>Measured from the back</h2>
+ *
+ * <p>The flywheel and the camera are on the back of the chassis, the intake on the front. Every
+ * number here is in the launcher's frame: the robot's frame turned half a turn, so "forward" and
+ * "ahead" mean out of the back and "left" is the left of someone looking that way. That keeps the
+ * solver's arithmetic the same as for a front shooter, and a turn is a turn from either end: the
+ * {@link ShotSolver.Shot#turnRadians()} it gives is counter-clockwise for the chassis too.
+ * {@code verity.json} describes the chassis itself, so its camera and mouth are at negative
+ * {@code forwardMetres} and face 180&deg;.</p>
+ *
  * <h2>Which CELL is worth shooting at</h2>
  *
  * <p>A HIVE has two CELLs and only the raised one scores (manual &sect;10.5.1), and both of them
@@ -22,8 +32,8 @@ package org.firstinspires.ftc.teamcode;
 public final class LaunchGeometry {
 
     /**
-     * The lens is on the front of the chassis, 12.5&nbsp;in up, looking forward and tilted
-     * 45&deg; up (docs/adr/0007-the-camera-looks-forward-and-up.md).
+     * The lens is on the back of the chassis, 12.5&nbsp;in up, looking out of the back and tilted
+     * 45&deg; up (docs/adr/0007-the-camera-looks-forward-and-up.md, which predates the move).
      *
      * <p>Tilted so that it sees its alliance's raised CELL from the AUTO start squares, about
      * 1.45&nbsp;m away, and from anywhere in the launcher's range, about 0.46&ndash;2&nbsp;m from
@@ -38,7 +48,7 @@ public final class LaunchGeometry {
     private static final double CAMERA_ROLL_DEGREES = 0.0;
 
     /**
-     * Where a ball is when it leaves: in the mouth, ahead of the nose, sitting on the tiles.
+     * Where a ball is when it leaves: in the mouth, out past the back bumper, sitting on the tiles.
      *
      * <p>The height is the centre of a POLLEN resting on the floor &mdash; 1.4&nbsp;in, half of
      * its 2.8&nbsp;in diameter &mdash; and not the axle of anything, because what flies is the
@@ -109,7 +119,7 @@ public final class LaunchGeometry {
     }
 
     /**
-     * How far ahead of the robot's centre a ball leaves, in metres.
+     * How far behind the robot's centre a ball leaves, in metres, measured out of the back.
      *
      * <p>Needed by an AUTONOMOUS routine, which measures its target from a row of balls on the
      * tiles rather than from the chassis: a ball flies from where it is lying, and the solver

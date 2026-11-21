@@ -42,7 +42,7 @@ class SweepAndShootAutoTest {
     private static final BioBuzzField.HiveTip BLUE_DOWN = BioBuzzField.HiveTip.AUDIENCE_DOWN;
 
     /** The square the OpMode's own INIT telemetry names, which is what a driver lines up on. */
-    private static final Pose2d START = new Pose2d(-0.55, -1.431, Math.toRadians(90.0));
+    private static final Pose2d START = new Pose2d(-0.55, -1.431, Math.toRadians(270.0));
 
     /**
      * Simulated seconds per step, kept level with the wall clock.

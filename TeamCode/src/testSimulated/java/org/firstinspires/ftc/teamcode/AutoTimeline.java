@@ -87,6 +87,11 @@ public final class AutoTimeline {
             shotYet = true;
             carrying = false;
         }
+        if (staging.getPower() > 0.05 && !shootCommand.flywheelReady(flywheel.getVelocity(),
+                shootCommand.TARGET_TICKS_PER_SECOND)) {
+            violations.add(String.format("%.1fs staging fed with the flywheel at %.0f%% of its target",
+                    t, 100.0 * flywheel.getVelocity() / shootCommand.TARGET_TICKS_PER_SECOND));
+        }
         if (stagingOn && feedingFrom != null && inches(pose, feedingFrom)
                 > MAX_DRIFT_WHILE_FEEDING_INCHES) {
             violations.add(String.format("%.1fs moved %.1f in while shooting", t,
@@ -127,6 +132,14 @@ public final class AutoTimeline {
      * @param red whose LOADING ZONE it must be parked in
      */
     public void assertKeptTheRules(String name, double doneSeconds, boolean red) {
+        assertKeptTheRules(name, doneSeconds, red, true);
+    }
+
+    /**
+     * As {@link #assertKeptTheRules(String, double, boolean)}, for a routine that either must
+     * shoot or must not: a park-only AUTO that fires has lost track of what it is.
+     */
+    public void assertKeptTheRules(String name, double doneSeconds, boolean red, boolean shoots) {
         Pose2d pose = hardware.drive().pose();
         double x = pose.x() / METRES_PER_INCH + 72;
         double y = pose.y() / METRES_PER_INCH + 72;
@@ -148,8 +161,13 @@ public final class AutoTimeline {
         if (!(doneSeconds <= 30.0)) {
             violations.add(String.format("finished at %.1f s, after the 30 s AUTO", doneSeconds));
         }
-        if (shots == 0) {
+        if (shoots && shots == 0) {
             violations.add("never shot");
+        } else if (!shoots && shots > 0) {
+            violations.add(String.format("shot %d times on a park-only routine", shots));
+        }
+        if (!shoots && collections > 0) {
+            violations.add("collected on a park-only routine");
         }
         if (carrying) {
             violations.add("collected and never shot what it collected");

@@ -66,10 +66,12 @@ class LauncherWiringTest {
         RobotConfig config = SimConfigFiles.robot("verity");
         LauncherConfig launcher = config.launchers().values().iterator().next();
 
-        double nose = config.chassis().lengthMetres() / 2.0;
-        double nearEdge = launcher.mouth().forwardMetres() - launcher.mouth().lengthMetres() / 2.0;
-        assertTrue(nearEdge >= nose - 1e-9,
-                "the mouth starts " + nearEdge + " m out, which is inside a nose at " + nose);
+        // Past whichever bumper it is on: Verity's flywheel is on the back.
+        double bumper = config.chassis().lengthMetres() / 2.0;
+        double nearEdge = Math.abs(launcher.mouth().forwardMetres())
+                - launcher.mouth().lengthMetres() / 2.0;
+        assertTrue(nearEdge >= bumper - 1e-9,
+                "the mouth starts " + nearEdge + " m out, which is inside a bumper at " + bumper);
 
         double floorEdge = launcher.mouth().heightMetres() - launcher.mouth().tallMetres() / 2.0;
         assertTrue(floorEdge <= 0.0 + 1e-9,

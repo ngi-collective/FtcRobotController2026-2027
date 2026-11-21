@@ -96,7 +96,7 @@ plain-JVM testable. See `docs/adr/0006-a-cluster-detection-is-an-aim-point.md`.
 
 **To watch the whole game work at once**, run `mise run dashboard --scenario auto-sweep`, pick
 **Auto: sweep and shoot**, drag the robot onto the start square the INIT telemetry names
-(`x -0.55, y -1.43, heading 90`), and press START. Nine seconds later the score reads
+(`x -0.55, y -1.43, heading 270`), and press START. Nine seconds later the score reads
 `RED 20 (1 TIP)`. `SweepAndShootAuto` is the routine to read first: five timed steps, no vision,
 no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit, as
 `AimedLauncherAcceptanceTest` does the vision loop's equivalent.
@@ -122,8 +122,13 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit, as
   camera's own frame — `range` is `hypot(x, y)` with the vertical dropped — and the camera looks
   forward tilted 45° up (12.5 in off the tiles), so all three are wrong about the field by a
   plausible-looking amount. Use `x`, `y`, `z` and level them through the mount.
-- **The camera looks forward and 45° up** (`docs/adr/0007-the-camera-looks-forward-and-up.md`).
-  It frames a raised CELL's cluster from about 0.46 m to about 2 m short of the opening, which
+- **The intake is on the front; the flywheel and the camera are on the back.** Every AUTO starts
+  and shoots with its back to the HIVE and collects intake first, and `AimedLauncherTeleOp` aims
+  the back. `LaunchGeometry` measures out of the back (forward means behind the chassis), so the
+  solver is unchanged and a turn is a turn from either end; `verity.json` describes the chassis,
+  so its camera and mouth sit at negative `forwardMetres` facing 180°.
+- **The camera looks out of the back and 45° up** (`docs/adr/0007-the-camera-looks-forward-and-up.md`,
+  written when it was on the front). It frames a raised CELL's cluster from about 0.46 m to about 2 m short of the opening, which
   covers the launcher's range, and sees it from both AUTO start squares at about 1.45 m. 45° is
   the design figure: when the bracket is measured, change `verity.json` and `LaunchGeometry`
   together (`LaunchGeometryTest` holds them equal).
@@ -154,11 +159,16 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit, as
   it coasts rather than being braked. Only `FlywheelPIDFTuning` still runs the software
   `iamyou.FlywheelPIDF`. `SweepAndShootAuto` is sim-only and keeps the hub's default gains: its
   timed sweep stops tipping the HIVE with these.
-- **Every Pedro AUTO keeps the same rules** (`AutoTimeline`, run on all sixteen by the
+- **Staging only feeds a flywheel at 96–102 % of its target.** Every OpMode checks
+  `shootCommand.flywheelReady` before it feeds, so a dip mid-shot pauses the feed; reversing always runs.
+  `shootCommand` gives up a shot whose flywheel never reaches the window rather than feed it, and
+  `AutoTimeline` fails any AUTO that feeds outside it.
+- **Every Pedro AUTO keeps the same rules** (`AutoTimeline`, run on all twenty by the
   `…AutoTimelineTest` and `…TipAware…Test` classes): pre-loads shot before any intake,
   one collection per shot, no intake while shooting, settle on the spot before a shot, spin the
   flywheel up at least 0.5 s before staging feeds, parked in the LOADING ZONE inside 30 s. The
-  sim's motors reach a commanded speed at once, so it cannot check that 0.5 s is long enough.
+  four `… Park` AUTOs (`Routine.PARK`) only drive to the LOADING ZONE, and
+  `ParkAutoTimelineTest` fails them if they fire or intake. The sim's motors reach a commanded speed at once, so it cannot check that 0.5 s is long enough.
 - **The AUTO tests run in real time**, two to a class so Gradle's four forks
   (`TeamCode/build.gradle`) run them side by side: about 3 minutes for `mise run test`. In the
   sim an OpMode loop never waits on hardware, so each one spins a whole core; more forks, or
@@ -181,8 +191,8 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit, as
 - **A 75° lob has a minimum range** (`rise / tan p`, about 40 cm) and needs its *least* speed at
   twice that. Closer shots are harder than mid-range ones, which is the opposite of the intuition a
   flat shooter gives a driver.
-- **This robot cannot shoot on the move.** The intake's sweep and the launcher's mouth are the same
-  6 cm of space, so a ball comes within reach and goes; at a third of power the chassis adds
+- **This robot cannot shoot on the move.** The launcher's mouth is 6 cm of space past the back
+  bumper, so a ball comes within reach and goes; at a third of power the chassis adds
   0.55 m/s to a 1.45 m/s horizontal component and the ball clears the far lip, which is 9 cm past
   the near one. Spin up, then roll the last couple of centimetres. Firing while driving needs a
   feeder, which this robot has not got.

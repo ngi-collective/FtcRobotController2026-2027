@@ -49,9 +49,11 @@ class LaunchGeometryTest {
 
         LensMount.Sighting sighted = LaunchGeometry.camera().sight(0.4, 1.3, 0.25);
 
-        assertEquals(expected.x(), sighted.forwardMetres(), 1e-9,
+        // LaunchGeometry measures out of the back, verity.json out of the front: half a turn about
+        // the vertical, which negates forward and left and leaves height alone.
+        assertEquals(-expected.x(), sighted.forwardMetres(), 1e-9,
                 "LaunchGeometry's camera is not where verity.json bolts it");
-        assertEquals(expected.y(), sighted.leftMetres(), 1e-9);
+        assertEquals(-expected.y(), sighted.leftMetres(), 1e-9);
         assertEquals(expected.z(), sighted.heightMetres(), 1e-9);
     }
 
@@ -88,8 +90,11 @@ class LaunchGeometryTest {
                         .sight(0.0, targetForwardMetres, 1.5100));
         double muzzleForward = targetForwardMetres - shot.distanceMetres();
 
-        double nearEdge = launcher.mouth().forwardMetres() - launcher.mouth().lengthMetres() / 2.0;
-        double farEdge = launcher.mouth().forwardMetres() + launcher.mouth().lengthMetres() / 2.0;
+        // The mouth is on the back: verity.json puts it at negative forwardMetres, and the solver
+        // measures out of the back.
+        double mouthBehind = -launcher.mouth().forwardMetres();
+        double nearEdge = mouthBehind - launcher.mouth().lengthMetres() / 2.0;
+        double farEdge = mouthBehind + launcher.mouth().lengthMetres() / 2.0;
         assertTrue(muzzleForward >= nearEdge - 1e-9 && muzzleForward <= farEdge + 1e-9,
                 "the solver throws from " + muzzleForward + " m ahead, and the mouth a ball is"
                         + " actually in spans " + nearEdge + " to " + farEdge + " m");

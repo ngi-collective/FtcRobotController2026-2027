@@ -41,7 +41,9 @@ public class FlywheelPIDFTuning extends OpMode {
     private int stepIndex = 1;
     private double volts = iamyou.FLYWHEEL_NOMINAL_VOLTS;
     private double peakError = 0.0;
-    CRServo staging;
+    private CRServo staging;
+    /** B latches this on; it feeds only while the flywheel is in shootCommand's ready window. */
+    private boolean feeding = false;
 
     @Override
     public void init() {
@@ -86,7 +88,7 @@ public class FlywheelPIDFTuning extends OpMode {
             adjust(-STEPS[stepIndex]);
         }
         if (gamepad1.bWasPressed()){
-            staging.setPower(1);
+            feeding = true;
         }
 
         if (battery != null) {
@@ -100,6 +102,7 @@ public class FlywheelPIDFTuning extends OpMode {
         double velocity = flywheel.getVelocity();
         double power = pidf.update(wanted, velocity, volts, dt);
         flywheel.setPower(power);
+        staging.setPower(feeding && shootCommand.flywheelReady(velocity, wanted) ? 1.0 : 0.0);
         if (on) {
             peakError = Math.max(peakError, Math.abs(pidf.error()));
         }
@@ -121,6 +124,7 @@ public class FlywheelPIDFTuning extends OpMode {
     @Override
     public void stop() {
         flywheel.setPower(0.0);
+        staging.setPower(0.0);
     }
 
     private void adjust(double step) {
