@@ -41,8 +41,8 @@ public class FlywheelPIDFTuning extends OpMode {
     private int stepIndex = 1;
     private double volts = iamyou.FLYWHEEL_NOMINAL_VOLTS;
     private double peakError = 0.0;
-    private StagingGate staging;
-    /** B latches this on; it feeds only while the gate is open. */
+    private CRServo staging;
+    /** B latches this on; it feeds only while the flywheel is in shootCommand's ready window. */
     private boolean feeding = false;
 
     @Override
@@ -53,9 +53,8 @@ public class FlywheelPIDFTuning extends OpMode {
         flywheel.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
         flywheel.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         battery = hardwareMap.voltageSensor.iterator().hasNext() ? hardwareMap.voltageSensor.iterator().next() : null;
-        CRServo stagingServo = hardwareMap.get(CRServo.class, "Staging");
-        stagingServo.setDirection(DcMotorSimple.Direction.REVERSE);
-        staging = new StagingGate(stagingServo, flywheel);
+        staging = hardwareMap.get(CRServo.class, "Staging");
+        staging.setDirection(DcMotorSimple.Direction.REVERSE);
         telemetry.addLine("Init complete. A = flywheel on/off.");
     }
 
@@ -103,8 +102,7 @@ public class FlywheelPIDFTuning extends OpMode {
         double velocity = flywheel.getVelocity();
         double power = pidf.update(wanted, velocity, volts, dt);
         flywheel.setPower(power);
-        staging.setFlywheelTarget(wanted);
-        staging.setPower(feeding ? 1.0 : 0.0);
+        staging.setPower(feeding && shootCommand.flywheelReady(velocity, wanted) ? 1.0 : 0.0);
         if (on) {
             peakError = Math.max(peakError, Math.abs(pidf.error()));
         }

@@ -87,7 +87,7 @@ public final class AutoTimeline {
             shotYet = true;
             carrying = false;
         }
-        if (staging.getPower() > 0.05 && !StagingGate.flywheelReady(flywheel.getVelocity(),
+        if (staging.getPower() > 0.05 && !shootCommand.flywheelReady(flywheel.getVelocity(),
                 shootCommand.TARGET_TICKS_PER_SECOND)) {
             violations.add(String.format("%.1fs staging fed with the flywheel at %.0f%% of its target",
                     t, 100.0 * flywheel.getVelocity() / shootCommand.TARGET_TICKS_PER_SECOND));

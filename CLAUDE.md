@@ -159,8 +159,8 @@ no odometry, and `SweepAndShootAutoTest` runs it headlessly on every commit, as
   it coasts rather than being braked. Only `FlywheelPIDFTuning` still runs the software
   `iamyou.FlywheelPIDF`. `SweepAndShootAuto` is sim-only and keeps the hub's default gains: its
   timed sweep stops tipping the HIVE with these.
-- **Staging only feeds a flywheel at 96–104 % of its target.** Every OpMode drives staging through
-  `StagingGate`, checked on every call, so a dip mid-shot pauses the feed; reversing always runs.
+- **Staging only feeds a flywheel at 96–102 % of its target.** Every OpMode checks
+  `shootCommand.flywheelReady` before it feeds, so a dip mid-shot pauses the feed; reversing always runs.
   `shootCommand` gives up a shot whose flywheel never reaches the window rather than feed it, and
   `AutoTimeline` fails any AUTO that feeds outside it.
 - **Every Pedro AUTO keeps the same rules** (`AutoTimeline`, run on all twenty by the

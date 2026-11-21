@@ -13,10 +13,10 @@ import java.util.Set;
  * One shot of everything the robot holds: spin the flywheel up, then run staging to feed it.
  *
  * <p>Spin up first: a ball fed to a wheel still coming up to speed leaves slow and falls short.
- * Staging goes through a {@link StagingGate}, so it only ever feeds while the flywheel reads
- * {@value StagingGate#MIN_FRACTION}&ndash;{@value StagingGate#MAX_FRACTION} of its target, and
- * pauses through any dip out of that window. Feeding starts once the flywheel has run for
- * {@link #SPIN_UP_MIN_MS} and the gate is open, and lasts {@link #FEED_MS}. The minimum also lets
+ * Staging only ever feeds while the flywheel reads {@value #MIN_READY_FRACTION}&ndash;
+ * {@value #MAX_READY_FRACTION} of its target (see {@link #flywheelReady}), and pauses through any
+ * dip out of that window. Feeding starts once the flywheel has run for {@link #SPIN_UP_MIN_MS}
+ * and is in the window, and lasts {@link #FEED_MS}. The minimum also lets
  * the chassis settle on its spot before anything leaves.</p>
  *
  * <p>A flywheel that has not reached the window after {@link #SPIN_UP_MAX_MS} gives up the shot
@@ -27,11 +27,17 @@ public class shootCommand implements Command {
     /** Flywheel target, encoder ticks per second. */
     public static final double TARGET_TICKS_PER_SECOND = 1350;
 
+    /** Least fraction of its target the flywheel may read while staging feeds it. */
+    public static final double MIN_READY_FRACTION = 0.96;
+
+    /** Greatest fraction of its target the flywheel may read while staging feeds it. */
+    public static final double MAX_READY_FRACTION = 1.02;
+
     /** Least it spins up before feeding, in milliseconds, whatever the encoder reads. */
     public static final long SPIN_UP_MIN_MS = 500;
 
     /**
-     * Longest it waits for the flywheel to reach the gate's window, in milliseconds. A loaded
+     * Longest it waits for the flywheel to reach the feeding window, in milliseconds. A loaded
      * wheel coming up from rest on the real hub can take more than a second and a half to settle
      * inside it.
      */
@@ -70,14 +76,23 @@ public class shootCommand implements Command {
 
     private final DcMotorEx flywheel;
     private final CRServo staging;
-    private final StagingGate gate;
     private long startTime;
     private long feedingSince;
 
     public shootCommand(DcMotorEx flywheel, CRServo staging) {
         this.flywheel = flywheel;
         this.staging = staging;
-        this.gate = new StagingGate(staging, flywheel);
+    }
+
+    /**
+     * Whether a flywheel reading {@code ticksPerSecond} may be fed: within
+     * {@link #MIN_READY_FRACTION}&ndash;{@link #MAX_READY_FRACTION} of a positive target. A
+     * flywheel with no target is never ready.
+     */
+    public static boolean flywheelReady(double ticksPerSecond, double targetTicksPerSecond) {
+        return targetTicksPerSecond > 0.0
+                && ticksPerSecond >= MIN_READY_FRACTION * targetTicksPerSecond
+                && ticksPerSecond <= MAX_READY_FRACTION * targetTicksPerSecond;
     }
 
     @Override
@@ -115,11 +130,11 @@ public class shootCommand implements Command {
     public void execute() {
         long now = System.currentTimeMillis();
         flywheel.setVelocity(TARGET_TICKS_PER_SECOND);
-        gate.setFlywheelTarget(TARGET_TICKS_PER_SECOND);
-        if (feedingSince < 0 && now - startTime >= SPIN_UP_MIN_MS && gate.isOpen()) {
+        boolean ready = flywheelReady(flywheel.getVelocity(), TARGET_TICKS_PER_SECOND);
+        if (feedingSince < 0 && now - startTime >= SPIN_UP_MIN_MS && ready) {
             feedingSince = now;
         }
-        gate.setPower(feedingSince < 0 ? 0.0 : 1.0);
+        staging.setPower(feedingSince >= 0 && ready ? 1.0 : 0.0);
     }
 
     @Override
@@ -132,7 +147,6 @@ public class shootCommand implements Command {
     @Override
     public void end(EndCondition endCondition) {
         flywheel.setVelocity(0);
-        gate.setFlywheelTarget(0);
-        gate.setPower(0);
+        staging.setPower(0);
     }
 }

@@ -263,9 +263,6 @@ public class iamyou extends LinearOpMode {
         // motor is put back in plain power mode, so the wheel coasts down instead of being braked to zero.
         shootCommand.configure(outtake);
         outtake.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        // Staging is only ever driven through this, so it cannot feed a flywheel off its target speed.
-        StagingGate stagingGate = new StagingGate(staging, outtake);
-        boolean stagingRefused = false;
         boolean flywheelVelocityMode = false;
         // Coast to a stop: braking a spinning flywheel hard is a shock load on the motor and gears.
         outtake.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
@@ -553,18 +550,14 @@ public class iamyou extends LinearOpMode {
                     }
                     outtake.setPower(0.0);
                 }
-                stagingGate.setFlywheelTarget(flywheelTarget);
 
                 // ---- Staging ----
-                // Separate from the intake. A feeds, but only while the flywheel is at 96-100% of its target (see
-                // StagingGate); B backs balls away from the flywheel and always runs.
-                if (gamepad1.a) {
-                    stagingRefused = !stagingGate.setPower(1.0);
-                } else if (gamepad1.b) {
-                    stagingRefused = !stagingGate.setPower(-1.0);
-                } else {
-                    stagingRefused = !stagingGate.setPower(0.0);
-                }
+                // Separate from the intake. A feeds, but only while the flywheel is in shootCommand's ready window
+                // (96-102% of its target); B backs balls away from the flywheel and always runs.
+                double stagingCommand = gamepad1.a ? 1.0 : gamepad1.b ? -1.0 : 0.0;
+                boolean stagingRefused = stagingCommand > 0.0
+                        && !shootCommand.flywheelReady(flywheelTicksPerSec, flywheelTarget);
+                staging.setPower(stagingRefused ? 0.0 : stagingCommand);
                 boolean flywheelReady = outtakeLogic.isReady();
                 if (flywheelReady && !wasReady) {
                     gamepad1.rumble(200);
@@ -587,7 +580,7 @@ public class iamyou extends LinearOpMode {
                 telemetry.addData("Intake", "%s  power %.2f  %.1f A",
                         intakeResult.state, intakeResult.power, intakeAmps);
                 telemetry.addData("Intake Servos L | R", "%.2f | %.2f", leftServo, rightServo);
-                telemetry.addData("Staging", "%.2f%s", stagingGate.getPower(),
+                telemetry.addData("Staging", "%.2f%s", staging.getPower(),
                         stagingRefused ? "  LOCKED: flywheel not at speed" : "");
                 telemetry.addData("Slow Mode", result.slowMode ? "ON" : "OFF");
                 telemetry.addData("Stop Assist", result.braking ? "BRAKING" : "off");
