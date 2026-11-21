@@ -40,13 +40,13 @@ public class Constants {
     public static PinpointConfig localizerConfig = new PinpointConfig(c -> {
         c.name.set("pinpoint");
         c.podType.set(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
-        c.xPodOffset.set(-3.7887642327256095);
-        c.yPodOffset.set(-1.1133000231164647);
+        c.xPodOffset.set(-1.753755404254583);
+        c.yPodOffset.set(-0.8289895095224457);
         c.xPodDirection.set(GoBildaPinpointDriver.EncoderDirection.FORWARD);
         c.yPodDirection.set(GoBildaPinpointDriver.EncoderDirection.REVERSED);
         c.globalDistanceUnit.set(DistanceUnit.INCH);
         c.offsetUnits.set(DistanceUnit.INCH);
-    });;
+    });
 
     // UNTUNED: starting values that let the simulated robot follow a path, not numbers measured on
     // the real one. Replace the whole block with ForesightTuner's output.
@@ -56,30 +56,29 @@ public class Constants {
     //   - gains and brake coefficients: guesses, checked only by PedroPathingSimTest
     public static ForesightConfig foresightConfig = new ForesightConfig(
             c -> {
-                Controller primaryTranslationalForward = Controller.proportional(0.24109671432838614);
-                Controller secondaryTranslationalForward = Controller.proportional(0.08907879372148371);
-                Controller primaryTranslationalLateral = Controller.proportional(0.29662096131391186);
-                Controller secondaryTranslationalLateral = Controller.proportional(0.10959351934743151);
+                Controller primaryTranslationalForward = Controller.proportional(0.3407496997407034);
+                Controller secondaryTranslationalForward = Controller.proportional(0.12589790905452367);
+                Controller primaryTranslationalLateral = Controller.proportional(0.4252118769182905);
+                Controller secondaryTranslationalLateral = Controller.proportional(0.1571044266507025);
 
                 c.forwardTranslational.set(Controller.piecewise(secondaryTranslationalForward).put(2.5, primaryTranslationalForward));
                 c.strafeTranslational.set(Controller.piecewise(secondaryTranslationalLateral).put(2.5, primaryTranslationalLateral));
 
-                c.coast.set(Controller.proportionalFeedforward(0.016629839359064622));
-                c.brake.set(Controller.proportionalFeedforward(0.014135363455204929));
+                c.coast.set(Controller.proportionalFeedforward(0.020310210822854162));
+                c.brake.set(Controller.proportionalFeedforward(0.01726367919942604));
 
-                c.headingFeedback.set(Controller.proportional(3.9353403428397735));
-                c.headingBrakeCoefficients.set(Vector2D.cartesian(0.058440552307153205, 0.0037273534349095347));
+                c.headingFeedback.set(Controller.proportional(6.022038636911486));
+                c.headingBrakeCoefficients.set(Vector2D.cartesian(0.05962535409434629, 0.0031282173785090856));
 
-                c.linearBrakeCoefficients.set(Matrix.diag(0.077822495746091, 0.0640327054313192));
-                c.quadraticBrakeCoefficients.set(Matrix.diag(8.122631246593916E-4, 0.0010263014367774678));
+                c.linearBrakeCoefficients.set(Matrix.diag(0.09177711467536624, 0.06655973423142839));
+                c.quadraticBrakeCoefficients.set(Matrix.diag(8.195765675339505E-4, 0.0015054085944726499));
 
-                c.maxAchievableForwardVelocity.set(59.90868640419559);
-                c.maxAchievableStrafeVelocity.set(50.621265628312756);
-                c.naturalForwardDeceleration.set(35.301751211680944);
-                c.naturalStrafeDeceleration.set(54.247378322048235);
+                c.maxAchievableForwardVelocity.set(49.89829564282622);
+                c.maxAchievableStrafeVelocity.set(37.91730182456512);
+                c.naturalForwardDeceleration.set(32.75716316708843);
+                c.naturalStrafeDeceleration.set(64.09011841085542);
             }
-    );
-    public static Follower createFollower(HardwareMap hardwareMap) {
+    );    public static Follower createFollower(HardwareMap hardwareMap) {
         return new Follower(
                 new PinpointLocalizer(hardwareMap, localizerConfig),
                 new Mecanum(hardwareMap, drivetrainConfig),

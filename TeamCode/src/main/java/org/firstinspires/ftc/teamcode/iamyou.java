@@ -25,6 +25,7 @@ import android.util.Size;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * The whole I AM YOU TeleOp in one file: hardware setup, field-centric drive math, intake and flywheel control.
@@ -34,7 +35,8 @@ import java.util.List;
  *   Control Hub motors ...... 0 FL, 1 FR, 2 BL, 3 BR
  *   Expansion Hub motors .... 0 IntakeM, 1 Outtake (the flywheel)
  *   Servos .................. IntakeSL, IntakeSR, Staging (continuous rotation; they always spin with IntakeM)
- *   Control Hub I2C bus 0 ... imu (the hub's built-in IMU; the only heading source, there is no odometry)
+ *   Control Hub I2C bus 0 ... imu (the hub's built-in IMU, used as a heading backup)
+ *   I2C ..................... pinpoint (goBILDA Pinpoint with two odometry pods)
  *   USB ..................... Webcam 1 (looks forward, tilted 45 degrees up at the CELLs' tags; optional, aiming is off without it)
  *
  * Driver controls (gamepad 1; in the two-controller version the D-pad, Start and logo buttons are on gamepad 2):
@@ -46,6 +48,11 @@ import java.util.List;
  *   Left bumper ......... pollen lock (press to turn ON/OFF). While ON the robot turns to face the yellow pollen
  *                         (the middle of the group if there are several) and the left stick drives ROBOT-relative,
  *                         so pushing forward drives straight into it. Moving the right stick overrides the aim.
+ *   Y ................... software brake (press to turn ON/OFF). While ON the robot holds the spot and heading it
+ *                         had when Y was pressed: pushed, it pushes back, and once let go it returns there (Pedro
+ *                         Pathing's hold-endpoint on the Pinpoint's odometry, see SoftwareBrake). The sticks and the
+ *                         aimer do not move it; the intake, flywheel and staging still work. A full heading reset
+ *                         (logo) turns it off. Needs the Pinpoint.
  *   D-pad ............... where the driver is standing (Up=N Down=S Left=W Right=E)
  *   Start (Options) ..... zero heading: wherever the robot faces right now becomes NORTH
  *   Logitech logo ....... FULL heading reset: also resets the Pinpoint (position + gyro recalibration), the hub
@@ -201,6 +208,8 @@ public class iamyou extends LinearOpMode {
             pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, pinpointName);
             configurePinpoint(pinpoint);
         }
+        // The software brake holds a pose measured by the Pinpoint's pods, so there is none without one.
+        SoftwareBrake brake = pinpoint != null ? new SoftwareBrake(pinpoint) : null;
 
         // The Control Hub's built-in IMU. The hub stands on its edge with its logo facing the robot's RIGHT side and
         // its USB ports facing FORWARD (toward the intake). Control Hub versions steer by it; Pinpoint versions read it
@@ -356,6 +365,7 @@ public class iamyou extends LinearOpMode {
             double lastCheckedHeading = 0.0;
             boolean lastOptions = false;
             boolean lastGuide = false;
+            boolean lastY = false;
             boolean resetPending = false;
             boolean calibrating = false;
             double stoppedSeconds = 0.0;
@@ -400,6 +410,10 @@ public class iamyou extends LinearOpMode {
                     }
                     headingTracker.fullReset();
                     pinpointRawAtZero = 0.0;
+                    // The Pinpoint's position just went back to 0, so the pose the brake holds no longer means anything.
+                    if (brake != null) {
+                        brake.release();
+                    }
                     resetPending = false;
                     calibratingSeconds = 0.0;
                     calibrating = pinpoint != null;
@@ -439,11 +453,26 @@ public class iamyou extends LinearOpMode {
                 if (gamepad1.xWasPressed()){
                     toggleAprilTagAdjust = !toggleAprilTagAdjust;
                 }
+
+                // ---- Software brake ----
+                // Y toggles it, once per press. After headingTracker.update, which refreshed the Pinpoint this loop.
+                if (gamepad1.y && !lastY && brake != null && !calibrating) {
+                    if (brake.isEngaged()) {
+                        brake.release();
+                    } else if (pinpoint.getDeviceStatus() == GoBildaPinpointDriver.DeviceStatus.READY) {
+                        brake.engage();
+                    }
+                }
+                lastY = gamepad1.y;
+                boolean braked = brake != null && brake.isEngaged();
+
                 // ---- Drive ----
+                // While braked the sticks are fed in as released, so the drive logic comes to rest with the robot
+                // and the zero-power behaviour below stays BRAKE, which also resists a push.
                 DriveParameters params = new DriveParameters(
-                        gamepad1.left_stick_x,
-                        gamepad1.left_stick_y,
-                        aiming ? 0.0 : TURN_REVERSED ? -gamepad1.right_stick_x : gamepad1.right_stick_x,
+                        braked ? 0.0 : gamepad1.left_stick_x,
+                        braked ? 0.0 : gamepad1.left_stick_y,
+                        braked || aiming ? 0.0 : TURN_REVERSED ? -gamepad1.right_stick_x : gamepad1.right_stick_x,
                         gamepad1.left_trigger,
                         heading,
                         driverPosition,
@@ -473,7 +502,8 @@ public class iamyou extends LinearOpMode {
                 // actually did. Field-centric only works when all three agree, however good the heading is.
                 double headingRate = dt > 0 ? AngleUnit.normalizeDegrees(heading - lastCheckedHeading) / dt : 0.0;
                 lastCheckedHeading = heading;
-                if (!aiming && !(setup.options)) {
+                // Not while braked: the brake's own powers and a push both look like the drive disobeying the sticks.
+                if (!aiming && !braked && !(setup.options)) {
                     double measuredForward = Double.NaN;
                     double measuredLeft = Double.NaN;
                     if (pinpoint != null) {
@@ -498,6 +528,10 @@ public class iamyou extends LinearOpMode {
                     // Added after the drive math rather than fed in as a stick: the stick path's deadzone, friction
                     // boost and slow mode would reshape the aimer's tuned turn. CCW = left wheels back, right forward.
                     wheelPowers = addTurn(wheelPowers, aim.turnPower());
+                }
+                if (braked) {
+                    // The brake owns the wheels outright: no sticks, no aimer turn.
+                    wheelPowers = brake.update(dt);
                 }
                 if (calibrating) {
                     wheelPowers = new double[]{0.0, 0.0, 0.0, 0.0};   // hold still while the gyro recalibrates
@@ -577,6 +611,7 @@ public class iamyou extends LinearOpMode {
                     telemetry.addLine("HEADING RESET: hold still, recalibrating...");
                 }
                 telemetry.addData("Aim", aimStatus(aimer, aim, outtakeLogic.isOn()));
+                telemetry.addData("Software Brake", SoftwareBrake.status(brake));
                 telemetry.addData("Intake", "%s  power %.2f  %.1f A",
                         intakeResult.state, intakeResult.power, intakeAmps);
                 telemetry.addData("Intake Servos L | R", "%.2f | %.2f", leftServo, rightServo);
@@ -716,7 +751,7 @@ public class iamyou extends LinearOpMode {
         if (ready) {
             return new String[]{solid, solid, "\u2588\u2588\u2588  READY TO SHOOT  \u2588\u2588\u2588", solid, solid};
         }
-        String percent = String.format(java.util.Locale.US, "NOT READY  %.0f%%",
+        String percent = String.format(Locale.US, "NOT READY  %.0f%%",
                 100.0 * Math.max(0.0, ticksPerSec) / FLYWHEEL_TARGET_TPS);
         return new String[]{
                 "\u250C" + repeat('\u2500', 20) + "\u2510",
@@ -1944,7 +1979,7 @@ public class iamyou extends LinearOpMode {
 
         /** "F 0.79  P 0.01  I 0.02  D 0.00": what each term is adding right now. */
         String terms() {
-            return String.format(java.util.Locale.US, "F %.2f  P %.2f  I %.2f  D %.2f",
+            return String.format(Locale.US, "F %.2f  P %.2f  I %.2f  D %.2f",
                     feedforward, proportional, integral, derivative);
         }
     }

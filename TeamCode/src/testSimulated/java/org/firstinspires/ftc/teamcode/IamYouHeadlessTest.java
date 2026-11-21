@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -10,6 +11,7 @@ import org.junit.runner.RunWith;
 import org.firstinspires.ftc.teamcode.simulated.VerityRobot;
 import org.ngicollective.ftcsim.app.PlainJvmVision;
 import org.ngicollective.ftcsim.hardware.FakeHardwareMap;
+import org.ngicollective.ftcsim.hardware.FakePinpoint;
 import org.ngicollective.ftcsim.harness.LinearOpModeHarness;
 import org.ngicollective.ftcsim.harness.OpModeHarness;
 import org.ngicollective.ftcsim.sim.Pose2d;
@@ -215,6 +217,108 @@ public class IamYouHeadlessTest {
     }
 
     @Test
+    public void theSoftwareBrakePushesAShovedRobotBackToWhereItWasBraked() {
+        launchAndStart();
+        assertBrakeRestoresPose();
+    }
+
+    @Test
+    public void oneControllerHoldsTheDrivenPoseAndReleasesOnGamepadOneY() {
+        launch(new iamyouOneController());
+        start();
+        drive(0.0, -1.0, 0.0f, 0.4);
+        turnTo(45.0);
+        assertBrakeRestoresPose();
+
+        pressY();
+        assertTrue(drive(0.0, -1.0, 0.0f, 0.5).x() > 0.2, "Y should return control to the driver");
+    }
+
+    private void assertBrakeRestoresPose() {
+        Pose2d braked = engageSoftwareBrake();
+
+        // Six inches one way, four the other and fifteen degrees round, as a robot being rammed would be.
+        shove(new Pose2d(braked.x() + 0.15, braked.y() + 0.10, braked.heading() + Math.toRadians(15.0)));
+        assertTrue(offBy(braked) > 0.12, "the shove should have moved the robot");
+
+        for (int tick = 0; tick < 150; tick++) {
+            step();
+        }
+
+        Pose2d now = hardware.drive().pose();
+        assertTrue(offBy(braked) < 0.0254, "the brake should return the robot to " + braked + ", it is at " + now);
+        assertEquals(0.0, AngleUnit.normalizeRadians(now.heading() - braked.heading()), Math.toRadians(2.0),
+                "the brake should restore the heading of " + braked + ", it is at " + now);
+    }
+
+    @Test
+    public void theSticksDoNotMoveARobotOnTheSoftwareBrake() {
+        launchAndStart();
+        Pose2d braked = engageSoftwareBrake();
+
+        harness.gamepad1().left_stick_y = -1.0f;
+        harness.gamepad1().right_stick_x = 1.0f;
+        for (int tick = 0; tick < 50; tick++) {
+            step();
+        }
+
+        Pose2d now = hardware.drive().pose();
+        assertTrue(offBy(braked) < 0.0127, "the sticks moved a braked robot to " + now);
+        assertEquals(0.0, AngleUnit.normalizeRadians(now.heading() - braked.heading()), Math.toRadians(1.0),
+                "the sticks turned a braked robot to " + now);
+    }
+
+    @Test
+    public void pressingYAgainHandsTheDriveBackToTheSticks() {
+        launchAndStart();
+        Pose2d braked = engageSoftwareBrake();
+
+        pressY();
+        await(() -> harness.lastTelemetry().contains("Software Brake : off (Y to engage)"),
+                () -> "Y never released the brake; telemetry was " + harness.lastTelemetry());
+
+        Pose2d forward = drive(0.0, -1.0, 0.0f, 0.5);
+        assertTrue(forward.x() > 0.2, "a released robot should drive forward from " + braked + ", it moved " + forward);
+    }
+
+    /** Presses Y, waits for the brake to report ON, and returns where the robot is being held. */
+    private Pose2d engageSoftwareBrake() {
+        pressY();
+        await(() -> harness.lastTelemetry().stream().anyMatch(line -> line.startsWith("Software Brake : ON")),
+                () -> "Y never engaged the brake; telemetry was " + harness.lastTelemetry());
+        return hardware.drive().pose();
+    }
+
+    /** Press and let go: the brake toggles on the press, so holding Y must not flicker it. */
+    private void pressY() {
+        harness.gamepad1().y = true;
+        for (int tick = 0; tick < 5; tick++) {
+            step();
+        }
+        harness.gamepad1().y = false;
+        for (int tick = 0; tick < 5; tick++) {
+            step();
+        }
+    }
+
+    /**
+     * Moves the robot the way a push does, with the odometry pods rolling along and counting it.
+     *
+     * <p>{@code setPose} alone is a placement, which the simulated Pinpoint ignores because its pods did not turn.
+     * Telling it the chassis was last seen where it stood makes the next tick count the whole move.</p>
+     */
+    private void shove(Pose2d to) {
+        Pose2d from = hardware.drive().pose();
+        hardware.drive().setPose(to);
+        hardware.get(FakePinpoint.class, "pinpoint").state().chassisPlaced(from);
+    }
+
+    private double offBy(Pose2d target) {
+        Pose2d now = hardware.drive().pose();
+        return Math.hypot(now.x() - target.x(), now.y() - target.y());
+    }
+
+    @Test
     public void operatorTriggerRunsTheIntakeInAndBumperEjects() {
         launchAndStart();
 
@@ -249,6 +353,10 @@ public class IamYouHeadlessTest {
 
     /** A fresh robot at the origin facing +X, its OpMode spinning in the init loop. */
     private void launch() {
+        launch(new iamyou());
+    }
+
+    private void launch(LinearOpMode opMode) {
         // iamyou opens the webcam to aim with, so the vision natives and the simulated camera have to be in place:
         // under Robolectric, as every test that builds a VisionPortal is. iamyou closes it again on STOP.
         try {
@@ -262,7 +370,7 @@ public class IamYouHeadlessTest {
         // to correct whatever the constant is set to.
         hardware.get(GoBildaPinpointDriver.class, "pinpoint").setYawScalar(1.0 / iamyou.PINPOINT_TURN_SCALE);
         hardware.drive().setPose(Pose2d.ORIGIN);
-        harness = OpModeHarness.forLinear(new iamyou(), hardware);
+        harness = OpModeHarness.forLinear(opMode, hardware);
         harness.launch();
         await(() -> harness.lastTelemetry().contains("Status : Initialized - waiting for start"),
                 () -> "the OpMode never reached its init loop; last telemetry was "
@@ -336,6 +444,10 @@ public class IamYouHeadlessTest {
      */
     private void launchAndStart() {
         launch();
+        start();
+    }
+
+    private void start() {
         harness.pressStart();
         await(() -> harness.lastTelemetry().stream()
                         .anyMatch(line -> line.startsWith("Facing (vs start) : ")),
