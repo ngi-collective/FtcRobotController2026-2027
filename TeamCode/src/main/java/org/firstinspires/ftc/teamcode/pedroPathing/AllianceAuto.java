@@ -130,10 +130,10 @@ public abstract class AllianceAuto extends LinearOpMode {
      * centre: here the line sits under the chassis's left 3 in, and is collected only if the real
      * intake spans that far.</p>
      */
-    static final double[] GARDEN_ENTRY = {28.0, 9.5, 180.0};
+    static final double[] GARDEN_ENTRY = {28.0, 8, 180.0};
 
     /** Driven forward along the line until the bumper is an inch off the red wall. */
-    static final double[] GARDEN_END = {10.4, 9.5, 180.0};
+    static final double[] GARDEN_END = {10.4, 8, 180.0};
 
     /**
      * Facing the red-wall FLOWER, bumper half an inch off its rings.

@@ -44,7 +44,7 @@ public class shootCommand implements Command {
     public static final long SPIN_UP_MAX_MS = 2500;
 
     /** How long staging feeds once the flywheel is up to speed, in milliseconds. */
-    public static final long FEED_MS = 3000;
+    public static final long FEED_MS = 7000;
 
     /**
      * The hub's velocity loop gains, written on every INIT because the hub keeps whatever was
