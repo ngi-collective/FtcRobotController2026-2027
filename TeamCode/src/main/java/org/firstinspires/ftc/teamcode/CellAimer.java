@@ -1,5 +1,7 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.pedropathing.follower.Follower;
+import com.pedropathing.math.Pose;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
@@ -71,6 +73,7 @@ public class CellAimer {
 
     private int pointedFrames;
     private int framesWithoutCell;
+    private int framesSeen;
     private Aim latest = Aim.none();
 
     /**
@@ -83,6 +86,14 @@ public class CellAimer {
         this.tags = tags;
         this.drive = drive;
         this.red = red;
+    }
+
+    /**
+     * An aimer for {@link #aimAndHold} only: it has no chassis of its own, so {@link #aim} must
+     * not be called on it.
+     */
+    public CellAimer(AprilTagProcessor tags, boolean red) {
+        this(tags, null, red);
     }
 
     /** Forgets how long the robot has been pointed and how long since it saw the CELL. */
@@ -103,6 +114,7 @@ public class CellAimer {
         if (fresh == null) {
             return latest;
         }
+        framesSeen++;
 
         LensMount.Sighting cell = raisedCell(fresh, red, mount);
         if (cell == null) {
@@ -149,6 +161,48 @@ public class CellAimer {
         } finally {
             drive.stop();
         }
+    }
+
+    /**
+     * Turns onto the CELL with Pedro's heading controller, then leaves the follower holding.
+     *
+     * <p>Each camera frame that sees the CELL turns its bearing into a field heading &mdash; the
+     * follower's heading now plus the error &mdash; and asks the follower to hold the robot's
+     * current x and y at that heading. Only fresh frames re-aim: between frames {@link #update()}
+     * repeats its last error, and adding that to a heading that has since moved would overshoot.
+     * Holding x and y as well means a robot shoved while aiming is pushed back to its spot.</p>
+     *
+     * <p>It returns with the hold still in force, whichever way it ends, so the caller must keep
+     * calling {@code follower.update()} for the hold to keep working; the next path or
+     * {@code manual} call replaces it. With the CELL never seen, the hold is on the pose the robot
+     * started from.</p>
+     *
+     * @return true once settled on the CELL; false on timeout, on STOP, or after
+     *     {@link #LOST_FRAMES} frames without the CELL in view
+     */
+    public boolean aimAndHold(LinearOpMode opMode, Follower follower, double timeoutSeconds) {
+        reset();
+        follower.update();
+        Pose spot = follower.pose();
+        follower.hold(spot);
+        ElapsedTime elapsed = new ElapsedTime();
+        while (opMode.opModeIsActive() && elapsed.seconds() < timeoutSeconds) {
+            follower.update();
+            int framesBefore = framesSeen;
+            Aim aim = update();
+            if (framesSeen != framesBefore && aim.hasTarget()) {
+                double heading = follower.pose().heading();
+                follower.hold(spot.withHeading(heading + aim.errorRadians()));
+            }
+            if (aim.settled()) {
+                return true;
+            }
+            if (framesWithoutCell >= LOST_FRAMES) {
+                return false;
+            }
+            opMode.idle();
+        }
+        return false;
     }
 
     /**
