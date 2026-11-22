@@ -25,9 +25,10 @@ import java.util.Map;
  *
  * <p>{@link #engage()} records the Pinpoint's pose and hands it to Pedro Pathing's hold-endpoint
  * ({@link Follower#hold}), with the gains in {@link Constants#foresightConfig}. While engaged,
- * {@link #update} returns the wheel powers that push the chassis back toward that pose: a shove is
- * met with a push the other way that grows with how far the robot has been moved, and once it stops
- * the robot returns to the spot and the heading it was braked at.</p>
+ * {@link #update} returns the wheel powers that keep the chassis on that pose. A shove does not get
+ * to move it far: once it has been moved an inch, {@link PushBack} drives back the other way with
+ * every wheel at full power, through the spot and a few inches beyond, shoving whatever pushed it,
+ * and then Pedro's hold brings it back to the spot and the heading it was braked at.</p>
  *
  * <p>Pedro is given neither the motors nor the Pinpoint to own. {@link Constants#createFollower}
  * would build a {@code Mecanum}, which caches each motor's last power and skips writes that look
@@ -47,6 +48,7 @@ public class SoftwareBrake {
     private final WheelPowers drivetrain = new WheelPowers();
     private final Follower follower;
     private Pose holdPose = null;
+    private PushBack pushBack = null;
 
     public SoftwareBrake(GoBildaPinpointDriver pinpoint) {
         localizer = new PinpointReader(pinpoint);
@@ -57,12 +59,14 @@ public class SoftwareBrake {
     public void engage() {
         localizer.update();
         holdPose = localizer.pose();
+        pushBack = new PushBack(holdPose.x(), holdPose.y(), holdPose.heading());
         follower.hold(holdPose);
     }
 
     /** Lets go: {@link #update} stops returning powers until the next {@link #engage()}. */
     public void release() {
         holdPose = null;
+        pushBack = null;
         follower.stop();
     }
 
@@ -90,21 +94,28 @@ public class SoftwareBrake {
         }
         Pose hold = brake.holdPose();
         Pose now = brake.pose();
-        return String.format(Locale.US, "ON (Y to release)  off by %.1f in, %.1f deg",
+        return String.format(Locale.US, "ON (Y to release)  %s  off by %.1f in, %.1f deg  pushed back %d",
+                brake.pushBack.mode() == PushBack.Mode.PUSHING_BACK ? "PUSHING BACK" : "holding",
                 Math.hypot(now.x() - hold.x(), now.y() - hold.y()),
-                Math.toDegrees(AngleUnit.normalizeRadians(now.heading() - hold.heading())));
+                Math.toDegrees(AngleUnit.normalizeRadians(now.heading() - hold.heading())),
+                brake.pushBack.pushes());
     }
 
     /**
      * One control step: reads the Pinpoint and returns the FL, FR, BL, BR powers that hold the
      * robot, already scaled so none exceeds 1. All zero when released.
+     *
+     * <p>The follower is stepped every loop, pushing back or not, so its own state never goes
+     * stale; while pushing back its powers are simply not used.</p>
      */
     public double[] update(double dtSeconds) {
         if (!isEngaged()) {
             return new double[4];
         }
         follower.update(dtSeconds);
-        return drivetrain.powers.clone();
+        Pose now = localizer.pose();
+        double[] push = pushBack.update(now.x(), now.y(), now.heading(), dtSeconds);
+        return push != null ? push : drivetrain.powers.clone();
     }
 
     /**

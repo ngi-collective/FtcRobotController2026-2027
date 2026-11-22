@@ -49,7 +49,8 @@ import java.util.Locale;
  *                         (the middle of the group if there are several) and the left stick drives ROBOT-relative,
  *                         so pushing forward drives straight into it. Moving the right stick overrides the aim.
  *   Y ................... software brake (press to turn ON/OFF). While ON the robot holds the spot and heading it
- *                         had when Y was pressed: pushed, it pushes back, and once let go it returns there (Pedro
+ *                         had when Y was pressed. Shoved an inch, it pushes back at FULL power, through its spot and
+ *                         6 in beyond to drive the pusher off, then returns to the spot (PushBack, then Pedro
  *                         Pathing's hold-endpoint on the Pinpoint's odometry, see SoftwareBrake). The sticks and the
  *                         aimer do not move it; the intake, flywheel and staging still work. A full heading reset
  *                         (logo) turns it off. Needs the Pinpoint.

@@ -241,9 +241,20 @@ public class IamYouHeadlessTest {
         shove(new Pose2d(braked.x() + 0.15, braked.y() + 0.10, braked.heading() + Math.toRadians(15.0)));
         assertTrue(offBy(braked) > 0.12, "the shove should have moved the robot");
 
-        for (int tick = 0; tick < 150; tick++) {
+        // It does not just walk back: it drives through the spot and on past it, as it would shoving the robot that
+        // rammed it, and only then comes home. Measured along the line the shove came in on.
+        double pushX = 0.15 / Math.hypot(0.15, 0.10);
+        double pushY = 0.10 / Math.hypot(0.15, 0.10);
+        double furthestPast = 0.0;
+        for (int tick = 0; tick < 200; tick++) {
             step();
+            Pose2d at = hardware.drive().pose();
+            furthestPast = Math.max(furthestPast, -((at.x() - braked.x()) * pushX + (at.y() - braked.y()) * pushY));
         }
+        // Alone it goes about 10 in past (6 driven, the rest rolling out). Only 2 in is asked for: the push-back's
+        // time limit runs on the OpMode's wall clock, and on a loaded machine the stepped world falls behind it.
+        assertTrue(furthestPast > 0.05,
+                "the brake should push back past its spot, it only got " + furthestPast + " m past");
 
         Pose2d now = hardware.drive().pose();
         assertTrue(offBy(braked) < 0.0254, "the brake should return the robot to " + braked + ", it is at " + now);
